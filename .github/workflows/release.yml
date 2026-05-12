@@ -39,7 +39,11 @@ permissions:
 
 jobs:
   setup:
-    runs-on: ubuntu-slim
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          - [self-hosted, ubuntu-latest]
     steps:
       - name: Disable release on nightly repository
         if: ${{ !inputs.nightly }}
@@ -57,7 +61,11 @@ jobs:
           fi
 
   build-ui-dist:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          - [self-hosted, ubuntu-latest]
     needs:
       - setup
     outputs:
@@ -166,7 +174,7 @@ jobs:
           retention-days: 1
 
   release-main:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     needs:
       - build-ui-dist
     env:
@@ -175,6 +183,8 @@ jobs:
       SYFT_GOLANG_SEARCH_REMOTE_LICENSES: "true"
     strategy:
       matrix:
+        os:
+          - [self-hosted, ubuntu-latest]
         release_os:
           - linux
           - hsm
@@ -335,7 +345,11 @@ jobs:
           fi
 
   release-dist:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          - [self-hosted, ubuntu-latest]
     if: inputs.dodistrelease
     needs:
       - build-ui-dist
@@ -367,7 +381,11 @@ jobs:
           gh release upload $TAGNAME *.xz
 
   release-deb:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          - [self-hosted, ubuntu-latest]
     if: inputs.dodebrelease && inputs.dogorelease && (startsWith(github.ref, 'refs/tags/') || inputs.nightly)
     needs:
       - release-main
@@ -427,7 +445,11 @@ jobs:
           aws s3 sync build/deb s3://${BUCKET}/deb
 
   release-rpm:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          - [self-hosted, ubuntu-latest]
     if: inputs.dorpmrelease && inputs.dogorelease && (startsWith(github.ref, 'refs/tags/') || inputs.nightly)
     needs:
       - release-main

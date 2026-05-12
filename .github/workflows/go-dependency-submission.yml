@@ -22,7 +22,11 @@ permissions:
 jobs:
   go-dependency-submission:
     # The type of runner that the job will run on
-    runs-on: ubuntu-slim
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          - [self-hosted, ubuntu-latest]
 
     steps:
       - name: 'Repository Checkout'

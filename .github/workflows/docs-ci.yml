@@ -12,7 +12,11 @@ on:
 jobs:
   check-links:
     name: Check Absolute Links
-    runs-on: ubuntu-slim
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          - [self-hosted, ubuntu-latest]
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -32,7 +36,11 @@ jobs:
           fi
   test-docs:
     name: Test Docs
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          - [self-hosted, ubuntu-latest]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6.0.5
@@ -52,7 +60,11 @@ jobs:
 
   lint-docs:
     name: Lint Docs
-    runs-on: ubuntu-slim
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          - [self-hosted, ubuntu-latest]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6.0.5

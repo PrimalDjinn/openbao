@@ -28,7 +28,7 @@ on:
         description: An expression indicating which kind of runners to use.
         required: false
         type: string
-        default: ubuntu-latest
+        default: '["self-hosted","ubuntu-latest"]'
       go-tags:
         description: A comma-separated list of additional build tags to consider satisfied during the build.
         required: false
@@ -58,7 +58,11 @@ env: ${{ fromJSON(inputs.env-vars) }}
 
 jobs:
   test-matrix:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          - ${{ fromJSON(inputs.runs-on) }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -120,10 +124,12 @@ jobs:
 
   test-go:
     needs: test-matrix
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os:
+          - ${{ fromJSON(inputs.runs-on) }}
         id: ${{ fromJSON(needs.test-matrix.outputs.matrix_ids) }}
     env:
       TIMEOUT_IN_MINUTES: ${{ inputs.timeout-minutes }}
@@ -272,7 +278,11 @@ jobs:
   test-collect-reports:
     if: ${{ ! cancelled() }}
     needs: [test-go, test-matrix]
-    runs-on: ubuntu-slim
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          - ${{ fromJSON(inputs.runs-on) }}
     steps:
       - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:

@@ -16,7 +16,11 @@ concurrency:
 jobs:
   codechecker:
     name: Code checks
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          - [self-hosted, ubuntu-latest]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -59,7 +63,11 @@ jobs:
 
   semgrep:
     name: Semgrep
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          - [self-hosted, ubuntu-latest]
     container:
       image: returntocorp/semgrep@sha256:ffc6f3567654f9431456d49fd059dfe548f007c494a7eb6cd5a1a3e50d813fb3
     # Skip any PR created by dependabot and any check triggered by merge group
@@ -74,7 +82,11 @@ jobs:
 
   gomod:
     name: Go mod checks
-    runs-on: ubuntu-slim
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          - [self-hosted, ubuntu-latest]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: ./.github/actions/set-up-go
@@ -88,7 +100,11 @@ jobs:
     # unless there is a `no-el8gobuild` label
     if: "!contains(github.event.pull_request.labels.*.name, 'no-el8gobuild')"
     name: EL8 Go build checks
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          - [self-hosted, ubuntu-latest]
     container: ghcr.io/almalinux/8-base
     steps:
       - name: Install required packages
@@ -112,7 +128,11 @@ jobs:
 
   protobuf:
     name: Protobuf checks
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          - [self-hosted, ubuntu-latest]
     if: github.base_ref == 'main'
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2

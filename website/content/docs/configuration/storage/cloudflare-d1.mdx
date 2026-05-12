@@ -1,0 +1,80 @@
+---
+sidebar_label: Cloudflare D1 Storage
+description: |-
+  The Cloudflare D1 storage backend stores OpenBao's data in a Cloudflare D1
+  database.
+---
+
+# Cloudflare D1 storage backend
+
+The Cloudflare D1 storage backend stores OpenBao's data in a Cloudflare D1
+database. D1 is SQLite-compatible, so this backend shares OpenBao's generic SQL
+storage behavior with the SQLite backend.
+
+:::warning
+
+**No High Availability** – the Cloudflare D1 backend does not support OpenBao
+HA locking. Do not configure it as `ha_storage`, and do not set
+`ha_enabled=true`.
+
+:::
+
+:::warning
+
+Cloudflare deployments must use static seal configuration with the seal key
+provided through the environment. The backend requires `BAO_STATIC_SEAL_KEY` to
+be set unless `require_static_seal_env=false` is configured.
+
+:::
+
+```hcl
+storage "cloudflare-d1" {
+  connection_url = "d1://account_id:api_token@database_id"
+}
+
+seal "static" {
+  current_key_id = "cloudflare-2026-05"
+  current_key    = "env://BAO_STATIC_SEAL_KEY"
+}
+```
+
+The connection URL can also be provided with `BAO_D1_CONNECTION_URL`; environment
+variables take precedence over values in the configuration file.
+
+## `cloudflare-d1` parameters
+
+- `connection_url` `(string: <required>)` – Cloudflare D1 connection URL in the
+  format `d1://account_id:api_token@database_id`. This can also be set with the
+  `BAO_D1_CONNECTION_URL` environment variable.
+
+- `table` `(string: "openbao_kv_store")` – Specifies the name of the table in
+  which to write OpenBao data. OpenBao will attempt to create it if missing and
+  `skip_create_table=false` (the default).
+
+- `skip_create_table` `(string: "true|false", default "false")` – When enabled,
+  OpenBao will not attempt to automatically create database tables if missing.
+
+- `require_static_seal_env` `(string: "true|false", default "true")` – When
+  enabled, startup fails unless `BAO_STATIC_SEAL_KEY` is present in the
+  environment.
+
+- `ha_enabled` `(string: "false")` – Must not be set to `true`; Cloudflare D1
+  does not support OpenBao HA locking.
+
+## `cloudflare-d1` examples
+
+Using environment variables:
+
+```shell
+export BAO_D1_CONNECTION_URL="d1://account_id:api_token@database_id"
+export BAO_STATIC_SEAL_KEY="32-byte-hex-or-base64-static-seal-key"
+```
+
+```hcl
+storage "cloudflare-d1" {}
+
+seal "static" {
+  current_key_id = "cloudflare-2026-05"
+  current_key    = "env://BAO_STATIC_SEAL_KEY"
+}
+```

@@ -1,0 +1,56 @@
+---
+sidebar_label: SQLite Storage
+description: |-
+  The SQLite storage backend stores OpenBao's data in a local SQLite database
+  file for local development and testing.
+---
+
+# SQLite storage backend
+
+The SQLite storage backend stores OpenBao's data in a local SQLite database
+file. It is intended for local development, testing, and Cloudflare D1 parity
+checks.
+
+:::warning
+
+**No High Availability** – the SQLite backend does not support high
+availability. Only a single OpenBao node may use this data store.
+
+:::
+
+:::danger
+
+**Not Production Recommended** – use Integrated Storage, PostgreSQL, or another
+production-supported backend for production deployments.
+
+:::
+
+```hcl
+storage "sqlite" {
+  path = "/tmp/openbao.db"
+}
+```
+
+## `sqlite` parameters
+
+- `path` `(string: <required>)` – Path to the SQLite database file.
+
+- `database` `(string: "")` – Alternate name for `path`.
+
+- `table` `(string: "openbao_kv_store")` – Specifies the name of the table in
+  which to write OpenBao data. OpenBao will attempt to create it if missing and
+  `skip_create_table=false` (the default).
+
+- `max_parallel` `(string: "128")` – Specifies the maximum number of concurrent
+  requests to SQLite.
+
+- `skip_create_table` `(string: "true|false", default "false")` – When enabled,
+  OpenBao will not attempt to automatically create database tables if missing.
+
+## `sqlite` examples
+
+```hcl
+storage "sqlite" {
+  path = "/var/lib/openbao/openbao.db"
+}
+```

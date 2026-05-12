@@ -38,8 +38,10 @@ import (
 	logicalDb "github.com/openbao/openbao/builtin/logical/database"
 	logicalKv "github.com/openbao/openbao/builtin/logical/kv"
 
+	physCloudflareD1 "github.com/openbao/openbao/physical/cloudflare-d1"
 	physPostgresql "github.com/openbao/openbao/physical/postgresql"
 	physRaft "github.com/openbao/openbao/physical/raft"
+	physSqlite "github.com/openbao/openbao/physical/sqlite"
 	physFile "github.com/openbao/openbao/sdk/v2/physical/file"
 	physInmem "github.com/openbao/openbao/sdk/v2/physical/inmem"
 
@@ -145,11 +147,13 @@ var (
 	}
 
 	physicalBackends = map[string]physical.Factory{
-		"file":       physFile.NewFileBackend,
-		"inmem_ha":   physInmem.NewInmemHA,
-		"inmem":      physInmem.NewInmem,
-		"raft":       physRaft.NewRaftBackend,
-		"postgresql": physPostgresql.NewPostgreSQLBackend,
+		"file":          physFile.NewFileBackend,
+		"inmem_ha":      physInmem.NewInmemHA,
+		"inmem":         physInmem.NewInmem,
+		"raft":          physRaft.NewRaftBackend,
+		"postgresql":    physPostgresql.NewPostgreSQLBackend,
+		"sqlite":        physSqlite.NewSQLiteBackend,
+		"cloudflare-d1": physCloudflareD1.NewCloudflareD1Backend,
 	}
 
 	serviceRegistrations = map[string]sr.Factory{

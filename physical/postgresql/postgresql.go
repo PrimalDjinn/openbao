@@ -20,6 +20,7 @@ import (
 	"github.com/hashicorp/go-uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/openbao/openbao/api/v2"
+	physical_utils "github.com/openbao/openbao/physical/utils"
 	"github.com/openbao/openbao/sdk/v2/database/helper/dbutil"
 	"github.com/openbao/openbao/sdk/v2/physical"
 )
@@ -56,6 +57,8 @@ var (
 // PostgreSQL Backend is a physical backend that stores data
 // within a PostgreSQL database.
 type PostgreSQLBackend struct {
+	*physical_utils.GenericSQLBackend
+
 	table           string
 	tableConstraint string
 	index           string
@@ -83,6 +86,23 @@ type PostgreSQLBackend struct {
 
 	fenceLock sync.RWMutex
 	fence     *PostgreSQLLock
+}
+
+type PostgresExecutor struct {
+	db *sql.DB
+}
+
+func (p *PostgresExecutor) ExecContext(ctx context.Context, query string, args ...any) error {
+	_, err := p.db.ExecContext(ctx, query, args...)
+	return err
+}
+
+func (p *PostgresExecutor) QueryOneContext(ctx context.Context, query string, args ...any) (physical_utils.Row, error) {
+	return p.db.QueryRowContext(ctx, query, args...), nil
+}
+
+func (p *PostgresExecutor) QueryContext(ctx context.Context, query string, args ...any) (physical_utils.Rows, error) {
+	return p.db.QueryContext(ctx, query, args...)
 }
 
 // PostgreSQLLock implements a lock using an PostgreSQL client.
@@ -203,12 +223,25 @@ func NewPostgreSQLBackend(conf map[string]string, logger log.Logger) (physical.B
 	}
 	quotedHaTable := dbutil.QuoteIdentifier(unquotedHaTable)
 
+	genericBackend, err := physical_utils.NewGenericSQLBackend(physical_utils.GenericSQLBackendConfig{
+		Client:      &PostgresExecutor{db: db},
+		Dialect:     physical_utils.PostgresDialect{},
+		Logger:      logger,
+		Table:       unquotedTable,
+		HASupported: true,
+		HAEnabled:   conf["ha_enabled"] == "true",
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	// Setup the backend.
 	m := &PostgreSQLBackend{
-		table:           quotedTable,
-		tableConstraint: dbutil.QuoteIdentifier(unquotedTable + "_pkey"),
-		index:           dbutil.QuoteIdentifier(unquotedTable + "_idx"),
-		client:          db,
+		GenericSQLBackend: genericBackend,
+		table:             quotedTable,
+		tableConstraint:   dbutil.QuoteIdentifier(unquotedTable + "_pkey"),
+		index:             dbutil.QuoteIdentifier(unquotedTable + "_idx"),
+		client:            db,
 		putQuery: "INSERT INTO " + quotedTable + " VALUES($1, $2, $3, $4)" +
 			" ON CONFLICT (path, key) DO " +
 			" UPDATE SET (parent_path, path, key, value) = ($1, $2, $3, $4)",
@@ -416,56 +449,29 @@ func (m *PostgreSQLBackend) splitKey(fullPath string) (string, string, string) {
 func (m *PostgreSQLBackend) Put(ctx context.Context, entry *physical.Entry) error {
 	defer metrics.MeasureSince([]string{"postgres", "put"}, time.Now())
 
-	parentPath, path, key := m.splitKey(entry.Key)
-
 	if err := m.validateFence(ctx); err != nil {
 		return err
 	}
 
-	_, err := m.client.ExecContext(ctx, m.putQuery, parentPath, path, key, entry.Value)
-	if err != nil {
-		return err
-	}
-	return nil
+	return m.GenericSQLBackend.Put(ctx, entry)
 }
 
 // Get is used to fetch and entry.
 func (m *PostgreSQLBackend) Get(ctx context.Context, fullPath string) (*physical.Entry, error) {
 	defer metrics.MeasureSince([]string{"postgres", "get"}, time.Now())
 
-	_, path, key := m.splitKey(fullPath)
-
-	var result []byte
-	err := m.client.QueryRowContext(ctx, m.getQuery, path, key).Scan(&result)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	ent := &physical.Entry{
-		Key:   fullPath,
-		Value: result,
-	}
-	return ent, nil
+	return m.GenericSQLBackend.Get(ctx, fullPath)
 }
 
 // Delete is used to permanently delete an entry
 func (m *PostgreSQLBackend) Delete(ctx context.Context, fullPath string) error {
 	defer metrics.MeasureSince([]string{"postgres", "delete"}, time.Now())
 
-	_, path, key := m.splitKey(fullPath)
-
 	if err := m.validateFence(ctx); err != nil {
 		return err
 	}
 
-	_, err := m.client.ExecContext(ctx, m.deleteQuery, path, key)
-	if err != nil {
-		return err
-	}
-	return nil
+	return m.GenericSQLBackend.Delete(ctx, fullPath)
 }
 
 // List is used to list all the keys under a given
@@ -473,24 +479,7 @@ func (m *PostgreSQLBackend) Delete(ctx context.Context, fullPath string) error {
 func (m *PostgreSQLBackend) List(ctx context.Context, prefix string) ([]string, error) {
 	defer metrics.MeasureSince([]string{"postgres", "list"}, time.Now())
 
-	rows, err := m.client.QueryContext(ctx, m.listQuery, "/"+prefix)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var keys []string
-	for rows.Next() {
-		var key string
-		err = rows.Scan(&key)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan rows: %w", err)
-		}
-
-		keys = append(keys, key)
-	}
-
-	return keys, nil
+	return m.GenericSQLBackend.List(ctx, prefix)
 }
 
 // ListPage is used to list all the keys under a given
@@ -498,30 +487,7 @@ func (m *PostgreSQLBackend) List(ctx context.Context, prefix string) ([]string, 
 func (m *PostgreSQLBackend) ListPage(ctx context.Context, prefix string, after string, limit int) ([]string, error) {
 	defer metrics.MeasureSince([]string{"postgres", "list-page"}, time.Now())
 
-	var rows *sql.Rows
-	var err error
-	if limit <= 0 {
-		rows, err = m.client.QueryContext(ctx, m.listPageQuery, "/"+prefix, after)
-	} else {
-		rows, err = m.client.QueryContext(ctx, m.listPageLimitedQuery, "/"+prefix, after, limit)
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var keys []string
-	for rows.Next() {
-		var key string
-		err = rows.Scan(&key)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan rows: %w", err)
-		}
-
-		keys = append(keys, key)
-	}
-
-	return keys, nil
+	return m.GenericSQLBackend.ListPage(ctx, prefix, after, limit)
 }
 
 // LockWith is used for mutual exclusion based on the given key.

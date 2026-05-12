@@ -136,8 +136,6 @@ dockers:
       - "--target=default"
     image_templates:
       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64"
-      - "quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64"
-      - "docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64"
     extra_files:
       - ./LICENSE
       - ./.release/docker/docker-entrypoint.sh
@@ -168,8 +166,6 @@ dockers:
       - "--target=default"
     image_templates:
       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm"
-      - "quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm"
-      - "docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm"
     extra_files:
       - ./LICENSE
       - ./.release/docker/docker-entrypoint.sh
@@ -200,8 +196,6 @@ dockers:
       - "--target=default"
     image_templates:
       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64"
-      - "quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64"
-      - "docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64"
     extra_files:
       - ./LICENSE
       - ./.release/docker/docker-entrypoint.sh
@@ -231,8 +225,6 @@ dockers:
       - "--target=default"
     image_templates:
       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le"
-      - "quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le"
-      - "docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le"
     extra_files:
       - ./LICENSE
       - ./.release/docker/docker-entrypoint.sh
@@ -262,8 +254,6 @@ dockers:
       - "--target=default"
     image_templates:
       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-riscv64"
-      - "quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-riscv64"
-      - "docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-riscv64"
     extra_files:
       - ./LICENSE
       - ./.release/docker/docker-entrypoint.sh
@@ -293,8 +283,6 @@ dockers:
       - "--target=default"
     image_templates:
       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x"
-      - "quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x"
-      - "docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x"
     extra_files:
       - ./LICENSE
       - ./.release/docker/docker-entrypoint.sh
@@ -324,8 +312,6 @@ dockers:
       - "--target=ubi"
     image_templates:
       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64"
-      - "quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64"
-      - "docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64"
     extra_files:
       - ./LICENSE
       - ./.release/docker/ubi-docker-entrypoint.sh
@@ -356,8 +342,6 @@ dockers:
       - "--target=ubi"
     image_templates:
       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64"
-      - "quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64"
-      - "docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64"
     extra_files:
       - ./LICENSE
       - ./.release/docker/ubi-docker-entrypoint.sh
@@ -387,8 +371,6 @@ dockers:
       - "--target=ubi"
     image_templates:
       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le"
-      - "quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le"
-      - "docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le"
     extra_files:
       - ./LICENSE
       - ./.release/docker/ubi-docker-entrypoint.sh
@@ -418,8 +400,6 @@ dockers:
       - "--target=ubi"
     image_templates:
       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x"
-      - "quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x"
-      - "docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x"
     extra_files:
       - ./LICENSE
       - ./.release/docker/ubi-docker-entrypoint.sh
@@ -449,8 +429,6 @@ dockers:
       - "--target=distroless"
     image_templates:
       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64"
-      - "quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64"
-      - "docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64"
     extra_files:
       - ./LICENSE
       - ./CHANGELOG.md
@@ -482,8 +460,6 @@ dockers:
       - "--target=distroless"
     image_templates:
       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm"
-      - "quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm"
-      - "docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm"
     extra_files:
       - ./LICENSE
       - ./CHANGELOG.md
@@ -515,8 +491,6 @@ dockers:
       - "--target=distroless"
     image_templates:
       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64"
-      - "quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64"
-      - "docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64"
     extra_files:
       - ./LICENSE
       - ./CHANGELOG.md
@@ -545,8 +519,6 @@ dockers:
       - "--target=distroless"
     image_templates:
       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le"
-      - "quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le"
-      - "docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le"
     extra_files:
       - ./LICENSE
       - ./CHANGELOG.md
@@ -575,8 +547,6 @@ dockers:
       - "--target=distroless"
     image_templates:
       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-riscv64"
-      - "quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-riscv64"
-      - "docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-riscv64"
     extra_files:
       - ./LICENSE
       - ./CHANGELOG.md
@@ -605,8 +575,6 @@ dockers:
       - "--target=distroless"
     image_templates:
       - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x"
-      - "quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x"
-      - "docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x"
     extra_files:
       - ./LICENSE
       - ./CHANGELOG.md
@@ -712,207 +680,6 @@ docker_manifests:
       - ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le
       - ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-riscv64
       - ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x
-  - name_template: docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}
-    skip_push: false
-    image_templates:
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-riscv64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x
-  - name_template: docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Major }}.{{ .Minor }}
-    skip_push: auto
-    image_templates:
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-riscv64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x
-  - name_template: docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Major }}
-    skip_push: auto
-    image_templates:
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-riscv64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x
-  - name_template: docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:latest
-    skip_push: auto
-    image_templates:
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-riscv64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x
-  - name_template: docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}
-    skip_push: false
-    image_templates:
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x
-  - name_template: docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Major }}.{{ .Minor }}
-    skip_push: auto
-    image_templates:
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x
-  - name_template: docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Major }}
-    skip_push: auto
-    image_templates:
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x
-  - name_template: docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:latest
-    skip_push: auto
-    image_templates:
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x
-  - name_template: docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}
-    skip_push: false
-    image_templates:
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-riscv64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x
-  - name_template: docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Major }}.{{ .Minor }}
-    skip_push: auto
-    image_templates:
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-riscv64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x
-  - name_template: docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Major }}
-    skip_push: auto
-    image_templates:
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-riscv64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x
-  - name_template: docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:latest
-    skip_push: auto
-    image_templates:
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-riscv64
-      - docker.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x
-  - name_template: quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}
-    skip_push: false
-    image_templates:
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-riscv64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x
-  - name_template: quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Major }}.{{ .Minor }}
-    skip_push: auto
-    image_templates:
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-riscv64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x
-  - name_template: quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Major }}
-    skip_push: auto
-    image_templates:
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-riscv64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x
-  - name_template: quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:latest
-    skip_push: auto
-    image_templates:
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-riscv64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x
-  - name_template: quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}
-    skip_push: false
-    image_templates:
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x
-  - name_template: quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Major }}.{{ .Minor }}
-    skip_push: auto
-    image_templates:
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x
-  - name_template: quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Major }}
-    skip_push: auto
-    image_templates:
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x
-  - name_template: quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:latest
-    skip_push: auto
-    image_templates:
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-ubi{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x
-  - name_template: quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}
-    skip_push: false
-    image_templates:
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-riscv64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x
-  - name_template: quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Major }}.{{ .Minor }}
-    skip_push: auto
-    image_templates:
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-riscv64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x
-  - name_template: quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Major }}
-    skip_push: auto
-    image_templates:
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-riscv64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x
-  - name_template: quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:latest
-    skip_push: auto
-    image_templates:
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-amd64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-arm64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-ppc64le
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-riscv64
-      - quay.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/openbao-distroless{{ .Env.NIGHTLY_RELEASE }}:{{ .Version }}-s390x
-
 archives:
   - format: tar.gz
     # this name template makes the OS and Arch compatible with the results of `uname`.

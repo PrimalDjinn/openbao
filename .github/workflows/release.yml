@@ -306,7 +306,10 @@ jobs:
         run: |
           FLAGS=""
           if [[ "${{ github.repository_owner }}" != "openbao" ]]; then
-            FLAGS="--skip=sign --skip=nfpm --skip=release"
+            FLAGS="--skip=sign --skip=nfpm"
+            if [[ "${{ inputs.nightly }}" == "true" ]]; then
+              export GORELEASER_CURRENT_TAG=$(git describe --tags --abbrev=0)
+            fi
           fi
           if [[ ! -f "goreleaser.${{ matrix.release_os }}.yaml" ]]; then
             yq e '.builds[0].goos |= ["${{ matrix.release_os }}"] | .checksum.name_template |= "checksums-${{ matrix.release_os }}.txt"' "goreleaser.other.yaml" | goreleaser release --clean --timeout=60m --verbose --parallelism 2 $FLAGS -f -

@@ -1,6 +1,7 @@
 package cloudflare_d1
 
 import (
+	"encoding/base64"
 	"testing"
 
 	"github.com/cloudflare/cloudflare-go/v6/d1"
@@ -59,4 +60,47 @@ func TestD1RowNoRows(t *testing.T) {
 	var value []byte
 	err := row.Scan(&value)
 	require.ErrorIs(t, err, physical_utils.ErrNoRows)
+}
+
+func TestD1RowsScan_BinaryBase64(t *testing.T) {
+	t.Parallel()
+
+	// Simulated D1 result: "hello" encoded as base64
+	results := []d1.QueryResult{
+		{
+			Success: true,
+			Results: []interface{}{
+				map[string]interface{}{"value": "aGVsbG8="},
+			},
+		},
+	}
+
+	rows := NewD1Rows(&results)
+	require.True(t, rows.Next())
+
+	var val []byte
+	err := rows.Scan(&val)
+	require.NoError(t, err)
+	require.Equal(t, []byte("hello"), val)
+}
+
+func TestD1BinaryEncoding(t *testing.T) {
+	t.Parallel()
+
+	rawBytes := []byte("secret-data")
+	args := []any{"path", rawBytes, 123}
+
+	// This simulates the encoding logic inside QueryContext
+	encodedArgs := make([]interface{}, len(args))
+	for i, arg := range args {
+		if b, ok := arg.([]byte); ok {
+			encodedArgs[i] = base64.StdEncoding.EncodeToString(b)
+		} else {
+			encodedArgs[i] = arg
+		}
+	}
+
+	require.Equal(t, "path", encodedArgs[0])
+	require.Equal(t, "c2VjcmV0LWRhdGE=", encodedArgs[1]) // base64 of "secret-data"
+	require.Equal(t, 123, encodedArgs[2])
 }

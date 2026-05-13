@@ -2,6 +2,7 @@ package cloudflare_d1
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/url"
@@ -162,14 +163,24 @@ func (client *DB) QueryContext(ctx context.Context, query string, args ...any) (
 		return nil, errors.New("backend client is nil")
 	}
 
+	// Cloudflare D1 API (via cloudflare-go) doesn't support raw []byte in JSON params.
+	// We must encode binary data to base64 strings.
+	encodedArgs := make([]interface{}, len(args))
+	for i, arg := range args {
+		if b, ok := arg.([]byte); ok {
+			encodedArgs[i] = base64.StdEncoding.EncodeToString(b)
+		} else {
+			encodedArgs[i] = arg
+		}
+	}
+
 	res, err := client.db.Query(ctx, client.creds.DatabaseID, d1.DatabaseQueryParams{
 		AccountID: cloudflare.F(client.creds.AccountID),
 		Body: d1.DatabaseQueryParamsBody{
 			Sql:    cloudflare.F(query),
-			Params: cloudflare.F[interface{}](args),
+			Params: cloudflare.F[interface{}](encodedArgs),
 		},
 	})
-
 	if err != nil {
 		return nil, err
 	}

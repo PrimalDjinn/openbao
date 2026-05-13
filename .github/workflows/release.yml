@@ -264,7 +264,7 @@ jobs:
         uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
 
       - name: GPG Import
-        if: inputs.dogorelease
+        if: inputs.dogorelease && github.repository_owner == 'openbao'
         id: gpg-import
         uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7.0.0
         with:
@@ -281,7 +281,7 @@ jobs:
 
         # Needed for nPFM
       - name: Create GPG Signing Key File
-        if: inputs.dogorelease && (startsWith(github.ref, 'refs/tags/') || inputs.nightly)
+        if: inputs.dogorelease && (startsWith(github.ref, 'refs/tags/') || inputs.nightly) && github.repository_owner == 'openbao'
         run: |
           GPG_KEY_FILE=/tmp/signing-key.gpg
           echo "${{ secrets.GPG_PRIVATE_KEY_BASE64 }}" | base64 -di > "${GPG_KEY_FILE}"
@@ -304,10 +304,14 @@ jobs:
       - name: "GoReleaser: Release"
         if: inputs.dogorelease && (startsWith(github.ref, 'refs/tags/') || inputs.nightly)
         run: |
+          FLAGS=""
+          if [[ "${{ github.repository_owner }}" != "openbao" ]]; then
+            FLAGS="--skip=sign --skip=nfpm --skip=release"
+          fi
           if [[ ! -f "goreleaser.${{ matrix.release_os }}.yaml" ]]; then
-            yq e '.builds[0].goos |= ["${{ matrix.release_os }}"] | .checksum.name_template |= "checksums-${{ matrix.release_os }}.txt"' "goreleaser.other.yaml" | goreleaser release --clean --timeout=60m --verbose --parallelism 2 -f -
+            yq e '.builds[0].goos |= ["${{ matrix.release_os }}"] | .checksum.name_template |= "checksums-${{ matrix.release_os }}.txt"' "goreleaser.other.yaml" | goreleaser release --clean --timeout=60m --verbose --parallelism 2 $FLAGS -f -
           else
-            goreleaser release --clean --timeout=60m --verbose --parallelism 2 -f "goreleaser.${{ matrix.release_os }}.yaml"
+            goreleaser release --clean --timeout=60m --verbose --parallelism 2 $FLAGS -f "goreleaser.${{ matrix.release_os }}.yaml"
           fi
         env:
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
@@ -350,7 +354,7 @@ jobs:
       matrix:
         os:
           - [self-hosted, ubuntu-latest]
-    if: inputs.dodistrelease
+    if: inputs.dodistrelease && github.repository_owner == 'openbao'
     needs:
       - build-ui-dist
       - release-main
@@ -386,7 +390,7 @@ jobs:
       matrix:
         os:
           - [self-hosted, ubuntu-latest]
-    if: inputs.dodebrelease && inputs.dogorelease && (startsWith(github.ref, 'refs/tags/') || inputs.nightly)
+    if: inputs.dodebrelease && inputs.dogorelease && (startsWith(github.ref, 'refs/tags/') || inputs.nightly) && github.repository_owner == 'openbao'
     needs:
       - release-main
     env:
@@ -450,7 +454,7 @@ jobs:
       matrix:
         os:
           - [self-hosted, ubuntu-latest]
-    if: inputs.dorpmrelease && inputs.dogorelease && (startsWith(github.ref, 'refs/tags/') || inputs.nightly)
+    if: inputs.dorpmrelease && inputs.dogorelease && (startsWith(github.ref, 'refs/tags/') || inputs.nightly) && github.repository_owner == 'openbao'
     needs:
       - release-main
     env:

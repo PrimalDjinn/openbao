@@ -121,7 +121,7 @@ jobs:
         if: inputs.dodistrelease
         run: |
           set -e
-          sudo npm install --global generate-license-file
+          npm install --global generate-license-file
           cd ui
           generate-license-file --input package.json --output ../LICENSE_NODE_MODULES.txt
 

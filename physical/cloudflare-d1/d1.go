@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/cloudflare/cloudflare-go/v6"
 	"github.com/cloudflare/cloudflare-go/v6/d1"
@@ -87,7 +88,7 @@ func NewCloudflareD1Backend(conf map[string]string, logger log.Logger) (physical
 	}
 	generic, err := physical_utils.NewGenericSQLBackend(physical_utils.GenericSQLBackendConfig{
 		Client:      &D1Executor{db: db},
-		Dialect:     physical_utils.SQLiteDialect{},
+		Dialect:     D1Dialect{},
 		Logger:      logger,
 		Table:       table,
 		HASupported: false,
@@ -127,7 +128,21 @@ func connectionURL(conf map[string]string) (*D1ConnectionCredentials, error) {
 	}
 
 	if connURL == "" {
-		return nil, errors.New("connection_url is required")
+		accountID := api.ReadBaoVariable("BAO_D1_ACCOUNT_ID")
+		databaseID := api.ReadBaoVariable("BAO_D1_DATABASE_ID")
+		apiToken := api.ReadBaoVariable("BAO_D1_TOKEN")
+		if apiToken == "" {
+			apiToken = api.ReadBaoVariable("BAO_D1_API_TOKEN")
+		}
+
+		if accountID != "" && databaseID != "" && apiToken != "" {
+			return &D1ConnectionCredentials{
+				AccountID:  accountID,
+				APIKey:     apiToken,
+				DatabaseID: databaseID,
+			}, nil
+		}
+		return nil, errors.New("connection_url is required (or set BAO_D1_ACCOUNT_ID, BAO_D1_DATABASE_ID, and BAO_D1_TOKEN)")
 	}
 
 	u, err := url.Parse(connURL)
@@ -213,4 +228,52 @@ func (d *D1Executor) QueryOneContext(ctx context.Context, query string, args ...
 	}
 
 	return &D1Row{rows: rows}, nil
+}
+
+type D1Dialect struct {
+	physical_utils.SQLiteDialect
+}
+
+func (D1Dialect) Name() string { return "cloudflare-d1" }
+
+func (D1Dialect) ListQuery(table string) string {
+	segment := "substr(path, length(?)+1)"
+	child := "substr(" + segment + ", 1, instr(" + segment + ", '/'))"
+	return "SELECT key FROM " + table + " WHERE path = ?" +
+		" UNION ALL SELECT DISTINCT " + child + " FROM " + table +
+		" WHERE parent_path = ? AND instr(" + segment + ", '/') > 0" +
+		" ORDER BY key"
+}
+
+func (D1Dialect) ListArgs(path string) []any {
+	p := path
+	if !strings.HasSuffix(p, "/") {
+		p += "/"
+	}
+	return []any{p, p, p, p, p}
+}
+
+func (D1Dialect) ListPageQuery(table string, limited bool) string {
+	segment := "substr(path, length(?)+1)"
+	child := "substr(" + segment + ", 1, instr(" + segment + ", '/'))"
+	query := "SELECT key FROM " + table + " WHERE path = ? AND key > ?" +
+		" UNION ALL SELECT DISTINCT " + child + " FROM " + table +
+		" WHERE parent_path = ? AND instr(" + segment + ", '/') > 0 AND " + child + " > ?" +
+		" ORDER BY key"
+	if limited {
+		query += " LIMIT ?"
+	}
+	return query
+}
+
+func (D1Dialect) ListPageArgs(path, after string, limit int) []any {
+	p := path
+	if !strings.HasSuffix(p, "/") {
+		p += "/"
+	}
+	args := []any{p, after, p, p, p, p, p, p, after}
+	if limit > 0 {
+		args = append(args, limit)
+	}
+	return args
 }

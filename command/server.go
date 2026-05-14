@@ -2480,8 +2480,9 @@ func setSeal(c *ServerCommand, config *server.Config, kms *kmsplugin.Catalog, in
 			config.Seals = append(config.Seals, &configutil.KMS{Type: vaultseal.WrapperTypeShamir.String()})
 		}
 	}
-	createdSeals := make([]vault.Seal, len(config.Seals))
+	createdSeals := make([]vault.Seal, 0, len(config.Seals))
 	for _, configSeal := range config.Seals {
+		c.logger.Info("setSeal: processing seal", "type", configSeal.Type, "disabled", configSeal.Disabled)
 		sealType := configSeal.Type
 		if !configSeal.Disabled && api.ReadBaoVariable("BAO_SEAL_TYPE") != "" {
 			sealType = api.ReadBaoVariable("BAO_SEAL_TYPE")
@@ -2505,6 +2506,7 @@ func setSeal(c *ServerCommand, config *server.Config, kms *kmsplugin.Catalog, in
 				//nolint:staticcheck // User-facing error.
 				return nil, nil, nil, nil, nil, fmt.Errorf("Error creating auto seal: %w", err)
 			}
+			c.logger.Info("setSeal: created auto seal", "type", configSeal.Type, "recovery_supported", seal.RecoveryKeySupported())
 
 			infoKey := "auto seal"
 			if configSeal.Disabled {

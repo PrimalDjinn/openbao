@@ -783,8 +783,6 @@ func (c *Core) CreateToken(ctx context.Context, entry *logical.TokenEntry, persi
 type TokenStore struct {
 	*framework.Backend
 
-	activeContext context.Context
-
 	core *Core
 
 	batchTokenEncryptor barrier.Encryptor
@@ -823,7 +821,6 @@ type TokenStore struct {
 func NewTokenStore(ctx context.Context, logger log.Logger, core *Core, config *logical.BackendConfig) (*TokenStore, error) {
 	// Initialize the store
 	t := &TokenStore{
-		activeContext:         ctx,
 		core:                  core,
 		batchTokenEncryptor:   core.barrier,
 		cubbyholeDestroyer:    destroyCubbyhole,
@@ -832,7 +829,7 @@ func NewTokenStore(ctx context.Context, logger log.Logger, core *Core, config *l
 		tokensPendingDeletion: &sync.Map{},
 		saltLock:              sync.RWMutex{},
 		tidyLock:              sync.Mutex{},
-		quitContext:           core.activeContext,
+		quitContext:           core.activeContext.Load(),
 		salts:                 make(map[string]*salt.Salt),
 	}
 
@@ -3195,14 +3192,14 @@ func (ts *TokenStore) handleCreateCommon(ctx context.Context, req *logical.Reque
 }
 
 // handleRevokeSelf handles the auth/token/revoke-self path for revocation of tokens
-// in a way that revokes all child tokens. Normally, using sys/revoke/leaseID will revoke
+// in a way that revokes all child tokens. Normally, using sys/leases/revoke/leaseID will revoke
 // the token and all children anyways, but that is only available when there is a lease.
 func (ts *TokenStore) handleRevokeSelf(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	return ts.revokeCommon(ctx, req, data, req.ClientToken)
 }
 
 // handleRevokeTree handles the auth/token/revoke/id path for revocation of tokens
-// in a way that revokes all child tokens. Normally, using sys/revoke/leaseID will revoke
+// in a way that revokes all child tokens. Normally, using sys/leases/revoke/leaseID will revoke
 // the token and all children anyways, but that is only available when there is a lease.
 func (ts *TokenStore) handleRevokeTree(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	id := data.Get("token").(string)
@@ -3253,7 +3250,7 @@ func (ts *TokenStore) revokeCommon(ctx context.Context, req *logical.Request, da
 }
 
 // handleRevokeOrphan handles the auth/token/revoke-orphan/id path for revocation of tokens
-// in a way that leaves child tokens orphaned. Normally, using sys/revoke/leaseID will revoke
+// in a way that leaves child tokens orphaned. Normally, using sys/leases/revoke/leaseID will revoke
 // the token and all children.
 func (ts *TokenStore) handleRevokeOrphan(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	// Parse the id
@@ -3645,7 +3642,8 @@ func (ts *TokenStore) tokenStoreRoleCreateUpdate(ctx context.Context, req *logic
 				if !matched {
 					return logical.ErrorResponse(
 						"given role path suffix contains invalid characters; must match %s",
-						pathSuffixSanitize.String()), nil
+						pathSuffixSanitize.String(),
+					), nil
 				}
 			}
 			entry.PathSuffix = pathSuffix
@@ -3797,7 +3795,8 @@ func (ts *TokenStore) tokenStoreRoleCreateUpdate(ctx context.Context, req *logic
 			}
 			resp.AddWarning(fmt.Sprintf(
 				"Given explicit max TTL of %d is greater than system/mount allowed value of %d seconds; until this is fixed attempting to create tokens against this role will result in an error",
-				int64(finalExplicitMaxTTL.Seconds()), int64(sysView.MaxLeaseTTL().Seconds())))
+				int64(finalExplicitMaxTTL.Seconds()), int64(sysView.MaxLeaseTTL().Seconds()),
+			))
 		}
 	}
 

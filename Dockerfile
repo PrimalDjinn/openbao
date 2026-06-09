@@ -2,21 +2,20 @@
 # SPDX-License-Identifier: MPL-2.0
 
 # This is {docker.io,quay.io,ghcr.io}/openbao/openbao{,-hsm}.
-FROM alpine:3.23 AS default
+FROM alpine:3.23.4 AS default
 
 COPY LICENSE /licenses/mozilla.txt
 
 # Create a non-root user to run the software.
 RUN addgroup openbao && adduser -S -G openbao openbao
 
-ARG EXTRA_PACKAGES
-RUN apk add --no-cache ca-certificates libcap su-exec dumb-init tzdata ${EXTRA_PACKAGES}
+RUN apk add --no-cache ca-certificates libcap su-exec dumb-init tzdata gcompat
 
 # The OpenBao binary is built externally in CI and copied into the container
 # build.
-ARG BIN_NAME
-COPY ${BIN_NAME} /bin/
-RUN ln -s /bin/${BIN_NAME} /bin/vault
+ARG TARGETARCH
+COPY bin/${TARGETARCH}/bao /bin/
+RUN ln -s /bin/bao /bin/vault
 
 # /openbao/logs is made available to use as a location to store audit logs, if
 # desired; /openbao/file is made available to use as a location with the file
@@ -54,7 +53,7 @@ CMD ["server", "-dev", "-dev-no-store-token"]
 
 
 # This is {docker.io,quay.io,ghcr.io}/openbao/openbao{,-hsm}-ubi.
-FROM registry.access.redhat.com/ubi10-minimal:10.1 AS ubi
+FROM registry.access.redhat.com/ubi10-minimal:10.2 AS ubi
 
 COPY LICENSE /licenses/mozilla.txt
 
@@ -68,9 +67,9 @@ RUN groupadd --gid 1000 openbao && \
 
 # The OpenBao binary is built externally in CI and copied into the container
 # build.
-ARG BIN_NAME
-COPY ${BIN_NAME} /bin/
-RUN ln -s /bin/${BIN_NAME} /bin/vault
+ARG TARGETARCH
+COPY bin/${TARGETARCH}/bao /bin/
+RUN ln -s /bin/bao /bin/vault
 
 # /openbao/logs is made available to use as a location to store audit logs, if
 # desired; /openbao/file is made available to use as a location with the file
@@ -112,14 +111,14 @@ CMD ["server", "-dev", "-dev-no-store-token"]
 
 
 # This is {docker.io,quay.io,ghcr.io}/openbao/openbao-distroless.
-FROM gcr.io/distroless/static:nonroot@sha256:f512d819b8f109f2375e8b51d8cfd8aafe81034bc3e319740128b7d7f70d5036 AS distroless
+FROM gcr.io/distroless/static:nonroot@sha256:963fa6c544fe5ce420f1f54fb88b6fb01479f054c8056d0f74cc2c6000df5240 AS distroless
 
 COPY LICENSE /licenses/mozilla.txt
 
 # The OpenBao binary is built externally in CI and copied into the container
 # build.
-ARG BIN_NAME
-COPY ${BIN_NAME} /bin/
+ARG TARGETARCH
+COPY bin/${TARGETARCH}/bao /bin/
 
 # 8200/tcp is the primary interface that applications use to interact with
 # OpenBao.

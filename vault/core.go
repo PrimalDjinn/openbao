@@ -41,7 +41,6 @@ import (
 	"github.com/openbao/openbao/command/server"
 	fwd "github.com/openbao/openbao/helper/forwarding"
 	"github.com/openbao/openbao/helper/identity"
-	"github.com/openbao/openbao/helper/identity/mfa"
 	"github.com/openbao/openbao/helper/locking"
 	"github.com/openbao/openbao/helper/metricsutil"
 	"github.com/openbao/openbao/helper/namespace"
@@ -283,9 +282,9 @@ type Core struct {
 	sealed    atomic.Bool
 
 	standby          atomic.Bool
-	standbyDoneCh    chan struct{}
-	standbyStopCh    atomic.Value
-	standbyRestartCh atomic.Value
+	haLoopDoneCh     chan struct{}
+	haLoopStopCh     atomic.Value
+	haLoopRestartCh  atomic.Value
 	manualStepDownCh chan struct{}
 	heldHALock       physical.Lock
 
@@ -509,8 +508,7 @@ type Core struct {
 
 	// This can be used to trigger operations to stop running when Vault is
 	// going to be shut down, stepped down, or sealed
-	activeContext           context.Context
-	activeContextCancelFunc atomic.Pointer[context.CancelFunc]
+	activeContext atomic.Pointer[atomicContext]
 
 	// unsealwithStoredKeysLock is a mutex that prevents multiple processes from
 	// unsealing with stored keys are the same time.
@@ -948,8 +946,8 @@ func CreateCore(conf *CoreConfig) (*Core, error) {
 	}
 
 	c.standby.Store(true)
-	c.standbyStopCh.Store(make(chan struct{}, 1))
-	c.standbyRestartCh.Store(make(chan struct{}, 1))
+	c.haLoopStopCh.Store(make(chan struct{}, 1))
+	c.haLoopRestartCh.Store(make(chan struct{}, 1))
 	c.sealed.Store(true)
 	c.metricSink.SetGaugeWithLabels([]string{"core", "unsealed"}, 0, nil)
 
@@ -1056,6 +1054,12 @@ func NewCore(conf *CoreConfig) (*Core, error) {
 		return nil, err
 	}
 
+	if c.recoveryMode {
+		// When in recovery mode, assign a default context during startup.
+		ctx, cancel := context.WithCancel(context.Background())
+		c.activeContext.Store(NewAtomicContext(ctx, cancel))
+	}
+
 	// Construct a new AES-GCM barrier
 	c.barrier = barrier.NewAESGCMBarrier(c.physical, "")
 	c.SetupSealManager()
@@ -1098,9 +1102,9 @@ func NewCore(conf *CoreConfig) (*Core, error) {
 	}
 
 	// MFA method
-	c.loginMFABackend = NewLoginMFABackend(c, conf.Logger)
-	if c.loginMFABackend.mfaLogger != nil {
-		c.AddLogger(c.loginMFABackend.mfaLogger)
+	c.loginMFABackend, err = NewLoginMFABackend(c, conf.Logger)
+	if err != nil {
+		return nil, err
 	}
 
 	// Logical backends
@@ -1385,7 +1389,7 @@ func (c *Core) GetContext() (context.Context, context.CancelFunc) {
 	c.stateLock.RLock()
 	defer c.stateLock.RUnlock()
 
-	return context.WithCancel(namespace.RootContext(c.activeContext))
+	return context.WithCancel(namespace.RootContext(c.activeContext.Load()))
 }
 
 // Sealed checks if the Vault is currently sealed
@@ -1790,11 +1794,11 @@ func (c *Core) unsealInternal(ctx context.Context, rootKey []byte) error {
 		c.standby.Store(false)
 	} else {
 		// Go to standby mode, wait until we are active to unseal
-		c.standbyDoneCh = make(chan struct{})
+		c.haLoopDoneCh = make(chan struct{})
 		c.manualStepDownCh = make(chan struct{}, 1)
-		c.standbyStopCh.Store(make(chan struct{}, 1))
-		c.standbyRestartCh.Store(make(chan struct{}, 1))
-		go c.runStandby(c.standbyDoneCh, c.manualStepDownCh, c.standbyStopCh.Load().(chan struct{}), c.standbyRestartCh.Load().(chan struct{}))
+		c.haLoopStopCh.Store(make(chan struct{}, 1))
+		c.haLoopRestartCh.Store(make(chan struct{}, 1))
+		go c.runHALoop(c.haLoopDoneCh, c.manualStepDownCh, c.haLoopStopCh.Load().(chan struct{}), c.haLoopRestartCh.Load().(chan struct{}))
 	}
 
 	// Success!
@@ -1973,9 +1977,9 @@ func (c *Core) sealInitCommon(ctx context.Context, req *logical.Request) (retErr
 	if te != nil && te.NumUses == tokenRevocationPending {
 		// Token needs to be revoked. We do this immediately here because
 		// we won't have a token store after sealing.
-		leaseID, err := c.expiration.CreateOrFetchRevocationLeaseByToken(c.activeContext, te)
+		leaseID, err := c.expiration.CreateOrFetchRevocationLeaseByToken(c.activeContext.Load(), te)
 		if err == nil {
-			err = c.expiration.Revoke(c.activeContext, leaseID)
+			err = c.expiration.Revoke(c.activeContext.Load(), leaseID)
 		}
 		if err != nil {
 			c.logger.Error("token needed revocation before seal but failed to revoke", "error", err)
@@ -2026,7 +2030,7 @@ func (c *Core) sealInternalWithOptions(grabStateLock bool) error {
 	c.clearForwardingClients()
 	c.requestForwardingConnectionLock.Unlock()
 
-	activeCtxCancel := c.activeContextCancelFunc.Load()
+	activeCtxCancel := c.activeContext.Load().Canceler()
 	cancelCtxAndLock := func() {
 		doneCh := make(chan struct{})
 		go func() {
@@ -2034,25 +2038,20 @@ func (c *Core) sealInternalWithOptions(grabStateLock bool) error {
 			case <-doneCh:
 			// Attempt to drain any inflight requests
 			case <-time.After(DefaultMaxRequestDuration):
-				if activeCtxCancel != nil {
-					(*activeCtxCancel)()
-				}
+				activeCtxCancel()
 			}
 		}()
 
-		// Stop the standby before attempting to acquire the standby lock.
-		// This will prevent a race condition between runStandby and this
-		// method.
-		c.stopStandby()
+		// Stop the HA loop before attempting to acquire the state lock. This
+		// will prevent a race condition between runHALoop and this method.
+		c.stopHALoop()
 
 		// Acquire the state lock.
 		c.stateLock.Lock()
 		close(doneCh)
 
 		// Stop requests from processing
-		if activeCtxCancel != nil {
-			(*activeCtxCancel)()
-		}
+		activeCtxCancel()
 	}
 
 	// Do pre-seal teardown if HA is not enabled
@@ -2065,9 +2064,7 @@ func (c *Core) sealInternalWithOptions(grabStateLock bool) error {
 		c.standby.Store(true)
 
 		// Stop requests from processing
-		if activeCtxCancel != nil {
-			(*activeCtxCancel)()
-		}
+		activeCtxCancel()
 	} else {
 		// If we are keeping the lock we already have the state write lock
 		// held. Otherwise grab it here so that when stopCh is triggered we are
@@ -2078,16 +2075,18 @@ func (c *Core) sealInternalWithOptions(grabStateLock bool) error {
 		}
 
 		// If we are trying to acquire the lock, force it to return with nil so
-		// runStandby will exit
-		// If we are active, signal the standby goroutine to shut down and wait
-		// for completion. We have the state lock here so nothing else should
-		// be toggling standby status.
-		close(c.standbyStopCh.Load().(chan struct{}))
-		c.logger.Debug("finished triggering standbyStopCh for runStandby")
+		// runHALoop will exit. If we are active, signal the standby goroutine
+		// to shut down and wait for completion. We have the state lock here so
+		// nothing else should be toggling standby status.
+		close(c.haLoopStopCh.Load().(chan struct{}))
+		c.logger.Debug("finished triggering haLoopCh for runHALoop")
 
-		// Wait for runStandby to stop
-		<-c.standbyDoneCh
-		c.logger.Debug("runStandby done")
+		// Wait for runHALoop to stop.
+		<-c.haLoopDoneCh
+		c.logger.Debug("runHALoop done")
+
+		// Stop requests from processing.
+		activeCtxCancel()
 	}
 
 	// Stop all running subsystems.
@@ -2155,7 +2154,7 @@ func (s standardUnsealStrategy) unseal(ctx context.Context, logger log.Logger, c
 
 	if c.autoRotateCancel == nil {
 		var autoRotateCtx context.Context
-		autoRotateCtx, c.autoRotateCancel = context.WithCancel(c.activeContext)
+		autoRotateCtx, c.autoRotateCancel = context.WithCancel(c.activeContext.Load())
 		go c.autoRotateBarrierLoop(autoRotateCtx)
 	}
 
@@ -2291,8 +2290,7 @@ func (c *Core) postUnseal(ctx context.Context, ctxCancelFunc context.CancelFunc,
 	c.postUnsealFuncs = nil
 
 	// Create a new request context
-	c.activeContext = ctx
-	c.activeContextCancelFunc.Store(&ctxCancelFunc)
+	c.activeContext.Store(NewAtomicContext(ctx, ctxCancelFunc))
 
 	defer func() {
 		if retErr != nil {
@@ -2331,7 +2329,7 @@ func (c *Core) postUnseal(ctx context.Context, ctxCancelFunc context.CancelFunc,
 	// the keys used for auto unsealing ensures Vault and its data will
 	// continue to be accessible even after prior seal keys are destroyed.
 	if seal, ok := c.seal.(*autoSeal); ok {
-		if err := seal.UpgradeKeys(c.activeContext); err != nil {
+		if err := seal.UpgradeKeys(c.activeContext.Load()); err != nil {
 			c.logger.Warn("post-unseal upgrade seal keys failed", "error", err)
 		}
 
@@ -3077,27 +3075,32 @@ func (c *Core) isPrimary() bool {
 }
 
 func (c *Core) loadLoginMFAConfigs(ctx context.Context) error {
-	eConfigs := make([]*mfa.MFAEnforcementConfig, 0)
-	allNamespaces, err := c.ListNamespaces(ctx)
+	namespaces, err := c.ListNamespaces(ctx)
 	if err != nil {
 		return err
 	}
 
-	for _, ns := range allNamespaces {
-		err := c.loginMFABackend.loadMFAMethodConfigs(ctx, ns)
-		if err != nil {
-			return fmt.Errorf("error loading MFA method Config, namespace %s, error: %w", ns.Path, err)
+	for _, ns := range namespaces {
+		if err := c.loadLoginMFAConfigsForNamespace(ctx, ns); err != nil {
+			return err
 		}
-
-		loadedConfigs, err := c.loginMFABackend.loadMFAEnforcementConfigs(ctx, ns)
-		if err != nil {
-			return fmt.Errorf("error loading MFA enforcement Config, namespace %s, error: %w", ns.Path, err)
-		}
-
-		eConfigs = append(eConfigs, loadedConfigs...)
 	}
 
-	for _, conf := range eConfigs {
+	return nil
+}
+
+func (c *Core) loadLoginMFAConfigsForNamespace(ctx context.Context, ns *namespace.Namespace) error {
+	err := c.loginMFABackend.loadMFAMethodConfigs(ctx, ns)
+	if err != nil {
+		return fmt.Errorf("error loading MFA method Config, namespace %s, error: %w", ns.Path, err)
+	}
+
+	loadedConfigs, err := c.loginMFABackend.loadMFAEnforcementConfigs(ctx, ns)
+	if err != nil {
+		return fmt.Errorf("error loading MFA enforcement Config, namespace %s, error: %w", ns.Path, err)
+	}
+
+	for _, conf := range loadedConfigs {
 		if err := c.loginMFABackend.loginMFAMethodExistenceCheck(conf); err != nil {
 			c.loginMFABackend.mfaLogger.Error("failed to find all MFA methods that exist in MFA enforcement configs", "configID", conf.ID, "namespaceID", conf.NamespaceID, "error", err.Error())
 		}
@@ -3122,7 +3125,7 @@ func (c *Core) setupCachedMFAResponseAuth() {
 	mfaQueue := c.mfaResponseAuthQueue
 	c.mfaResponseAuthQueueLock.Unlock()
 
-	ctx := c.activeContext
+	ctx := c.activeContext.Load()
 
 	go func() {
 		ticker := time.Tick(5 * time.Second)
@@ -3148,7 +3151,7 @@ func (c *Core) updateLockedUserEntries() {
 	}
 
 	var updateLockedUserEntriesCtx context.Context
-	updateLockedUserEntriesCtx, c.updateLockedUserEntriesCancel = context.WithCancel(c.activeContext)
+	updateLockedUserEntriesCtx, c.updateLockedUserEntriesCancel = context.WithCancel(c.activeContext.Load())
 
 	if err := c.runLockedUserEntryUpdates(updateLockedUserEntriesCtx); err != nil {
 		c.Logger().Error("failed to run locked user entry updates", "error", err)
@@ -3207,9 +3210,9 @@ func (c *Core) runLockedUserEntryUpdates(ctx context.Context) error {
 
 // runLockedUserEntryUpdatesForNamespace runs updates for locked users storage entries
 // for a single namespace. If a forceDelete flag is passed all login entries are deleted.
-func (c *Core) runLockedUserEntryUpdatesForNamespace(ctx context.Context, namespace *namespace.Namespace, forceDelete bool) (int, error) {
+func (c *Core) runLockedUserEntryUpdatesForNamespace(ctx context.Context, ns *namespace.Namespace, forceDelete bool) (int, error) {
 	// get the list of mount accessors of locked users of a namespace
-	view := NamespaceScopedView(c.barrier, namespace).SubView(coreLockedUsersPath)
+	view := c.NamespaceView(ns).SubView(coreLockedUsersPath)
 	mountAccessors, err := view.List(ctx, "")
 	if err != nil {
 		return 0, err
@@ -3328,6 +3331,9 @@ func (c *Core) runLockedUserEntryUpdatesForMountAccessor(ctx context.Context, vi
 // PopMFAResponseAuthByID pops an item from the mfaResponseAuthQueue by ID
 // it returns the cached auth response or an error
 func (c *Core) PopMFAResponseAuthByID(reqID string) (*MFACachedAuthResponse, error) {
+	if c.standby.Load() {
+		return nil, logical.ErrReadOnly
+	}
 	c.mfaResponseAuthQueueLock.Lock()
 	defer c.mfaResponseAuthQueueLock.Unlock()
 	return c.mfaResponseAuthQueue.PopByKey(reqID)
@@ -3336,6 +3342,9 @@ func (c *Core) PopMFAResponseAuthByID(reqID string) (*MFACachedAuthResponse, err
 // SaveMFAResponseAuth pushes an MFACachedAuthResponse to the mfaResponseAuthQueue.
 // it returns an error in case of failure
 func (c *Core) SaveMFAResponseAuth(respAuth *MFACachedAuthResponse) error {
+	if c.standby.Load() {
+		return logical.ErrReadOnly
+	}
 	c.mfaResponseAuthQueueLock.Lock()
 	defer c.mfaResponseAuthQueueLock.Unlock()
 	return c.mfaResponseAuthQueue.Push(respAuth)

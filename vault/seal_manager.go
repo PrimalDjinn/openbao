@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/armon/go-radix"
 	"github.com/hashicorp/go-hclog"
@@ -31,13 +30,6 @@ type ErrInvalidKey struct {
 
 func (e *ErrInvalidKey) Error() string {
 	return fmt.Sprintf("invalid key: %v", e.Reason)
-}
-
-// These variables hold the config and shares we have until we reach
-// enough to verify the appropriate root key.
-type rotationConfig struct {
-	rootConfig     *SealConfig
-	recoveryConfig *SealConfig
 }
 
 // These variables hold the unseal key parts to reconstruct the key and
@@ -67,8 +59,13 @@ type SealManager struct {
 // NewSealManager creates a new seal manager with core reference and logger.
 func NewSealManager(core *Core, logger hclog.Logger) *SealManager {
 	return &SealManager{
-		core:                         core,
-		sealByNamespace:              make(map[string]Seal),
+		core: core,
+		barrierByNamespace: radix.NewFromMap(map[string]interface{}{
+			"": core.barrier,
+		}),
+		sealByNamespace: map[string]Seal{
+			namespace.RootNamespaceUUID: core.seal,
+		},
 		unlockInformationByNamespace: make(map[string]*unlockInformation),
 		rotationConfigByNamespace:    make(map[string]*rotationConfig),
 		logger:                       logger,
@@ -97,16 +94,8 @@ func (sm *SealManager) sealAll() error {
 	return errs
 }
 
-// Reset clears all internal state, leaving only the root namespace's seal.
+// Reset clears rotation and unlock internal states.
 func (sm *SealManager) Reset() {
-	sm.barrierByNamespace = radix.NewFromMap(map[string]interface{}{
-		"": sm.core.barrier,
-	})
-
-	sm.sealByNamespace = map[string]Seal{
-		namespace.RootNamespaceUUID: sm.core.seal,
-	}
-
 	sm.unlockInformationByNamespace = map[string]*unlockInformation{}
 	sm.rotationConfigByNamespace = map[string]*rotationConfig{}
 }
@@ -117,8 +106,8 @@ func (sm *SealManager) SetSeal(ctx context.Context, sealConfig *SealConfig, ns *
 	sm.lock.Lock()
 	defer sm.lock.Unlock()
 
-	// Check if we're already present; if so, don't set any seal information
-	// as we don't want to overwrite what we have.
+	// Check if we have the seal present; if so, don't set any seal
+	// information as we don't want to overwrite what we have.
 	if _, ok := sm.sealByNamespace[ns.UUID]; ok {
 		return nil
 	}
@@ -246,15 +235,6 @@ func (sm *SealManager) NamespaceUnlockInformation(nsUUID string) *unlockInformat
 	defer sm.lock.RUnlock()
 
 	return sm.unlockInformationByNamespace[nsUUID]
-}
-
-// NamespaceRotationConfig returns the rotation config of the namespace
-// with the given UUID.
-func (sm *SealManager) NamespaceRotationConfig(nsUUID string) *rotationConfig {
-	sm.lock.RLock()
-	defer sm.lock.RUnlock()
-
-	return sm.rotationConfigByNamespace[nsUUID]
 }
 
 // SealStatus returns the seal status of a namespace, including its unlock
@@ -625,41 +605,4 @@ func (sm *SealManager) InitializeBarrier(ctx context.Context, ns *namespace.Name
 	}
 
 	return sealKeyShares, nil
-}
-
-// RotateBarrierKey rotates the barrier key of the given namespace.
-// It will return an error if the given namespace is not a sealable namespace.
-func (sm *SealManager) RotateBarrierKey(ctx context.Context, ns *namespace.Namespace) error {
-	sm.lock.RLock()
-	defer sm.lock.RUnlock()
-
-	b := sm.namespaceBarrier(ns.Path)
-	if b == nil {
-		return ErrNotSealable
-	}
-
-	newTerm, err := b.Rotate(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to create new encryption key: %w", err)
-	}
-	sm.logger.Info("installed new encryption key")
-
-	// In HA mode, we need to an upgrade path for the standby instances
-	// we are using the same key rotate grace period for all namespaces for now.
-	if sm.core.ha != nil && sm.core.KeyRotateGracePeriod() > 0 {
-		// Create the upgrade path to the new term
-		if err := b.CreateUpgrade(ctx, newTerm); err != nil {
-			sm.logger.Error("failed to create new upgrade", "term", newTerm, "error", err, "namespace", ns.Path)
-		}
-
-		// Schedule the destroy of the upgrade path
-		time.AfterFunc(sm.core.KeyRotateGracePeriod(), func() {
-			sm.logger.Debug("cleaning up upgrade keys", "waited", sm.core.KeyRotateGracePeriod())
-			if err := b.DestroyUpgrade(sm.core.activeContext, newTerm); err != nil {
-				sm.logger.Error("failed to destroy upgrade", "term", newTerm, "error", err, "namespace", ns.Path)
-			}
-		})
-	}
-
-	return nil
 }

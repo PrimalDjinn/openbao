@@ -249,7 +249,7 @@ func (b *SystemBackend) handleTidyLeases(ctx context.Context, req *logical.Reque
 	}
 
 	go func() {
-		tidyCtx := namespace.ContextWithNamespace(b.Core.activeContext, ns)
+		tidyCtx := namespace.ContextWithNamespace(b.Core.activeContext.Load(), ns)
 		err := b.Core.expiration.Tidy(tidyCtx)
 		if err != nil {
 			b.Backend.Logger().Error("failed to tidy leases", "error", err)
@@ -346,36 +346,31 @@ func (b *SystemBackend) handlePluginCatalogTypedList(ctx context.Context, req *l
 		return nil, err
 	}
 
-	plugins, err := b.Core.pluginCatalog.List(ctx, pluginType)
+	plugins, err := b.Core.pluginCatalog.ListVersionedPlugins(ctx, pluginType)
 	if err != nil {
 		return nil, err
 	}
-	sort.Strings(plugins)
-	return logical.ListResponse(plugins), nil
+
+	return logical.ListResponse(uniquePluginNames(plugins)), nil
 }
 
 func (b *SystemBackend) handlePluginCatalogUntypedList(ctx context.Context, _ *logical.Request, _ *framework.FieldData) (*logical.Response, error) {
-	data := make(map[string]interface{})
+	data := make(map[string]any)
 	var versionedPlugins []pluginutil.VersionedPlugin
 	for _, pluginType := range pluginTypes {
-		plugins, err := b.Core.pluginCatalog.List(ctx, pluginType)
-		if err != nil {
-			return nil, err
-		}
-		if len(plugins) > 0 {
-			sort.Strings(plugins)
-			data[pluginType.String()] = plugins
-		}
-
-		versioned, err := b.Core.pluginCatalog.ListVersionedPlugins(ctx, pluginType)
+		plugins, err := b.Core.pluginCatalog.ListVersionedPlugins(ctx, pluginType)
 		if err != nil {
 			return nil, err
 		}
 
 		// Sort for consistent ordering
-		sortVersionedPlugins(versioned)
+		sortVersionedPlugins(plugins)
 
-		versionedPlugins = append(versionedPlugins, versioned...)
+		if len(plugins) > 0 {
+			data[pluginType.String()] = uniquePluginNames(plugins)
+		}
+
+		versionedPlugins = append(versionedPlugins, plugins...)
 	}
 
 	if len(versionedPlugins) != 0 {
@@ -406,6 +401,20 @@ func (b *SystemBackend) handlePluginCatalogUntypedList(ctx context.Context, _ *l
 	return &logical.Response{
 		Data: data,
 	}, nil
+}
+
+func uniquePluginNames(plugins []pluginutil.VersionedPlugin) []string {
+	pluginNames := make([]string, 0, len(plugins))
+
+	for _, plugin := range plugins {
+		index, match := slices.BinarySearch(pluginNames, plugin.Name)
+		if match {
+			continue
+		}
+		pluginNames = slices.Insert(pluginNames, index, plugin.Name)
+	}
+
+	return pluginNames
 }
 
 func sortVersionedPlugins(versionedPlugins []pluginutil.VersionedPlugin) {
@@ -1365,7 +1374,7 @@ func (b *SystemBackend) handleRemount(ctx context.Context, req *logical.Request,
 // and intermittently checks to see if it is still open.
 func (b *SystemBackend) moveMount(ns *namespace.Namespace, logger log.Logger, migrationID string, entry *routing.MountEntry, fromPathDetails, toPathDetails namespace.MountPathDetails) error {
 	logger.Info("Starting to update the mount table and revoke leases")
-	revokeCtx := namespace.ContextWithNamespace(b.Core.activeContext, ns)
+	revokeCtx := namespace.ContextWithNamespace(b.Core.activeContext.Load(), ns)
 
 	var err error
 	// Attempt remount
@@ -2047,7 +2056,7 @@ func (b *SystemBackend) handleRevoke(ctx context.Context, req *logical.Request, 
 	if err != nil {
 		return nil, err
 	}
-	revokeCtx := namespace.ContextWithNamespace(b.Core.activeContext, ns)
+	revokeCtx := namespace.ContextWithNamespace(b.Core.activeContext.Load(), ns)
 	if data.Get("sync").(bool) {
 		// Invoke the expiration manager directly
 		if err := b.Core.expiration.Revoke(revokeCtx, leaseID); err != nil {
@@ -2089,7 +2098,7 @@ func (b *SystemBackend) handleRevokePrefixCommon(ctx context.Context,
 	}
 
 	// Invoke the expiration manager directly
-	revokeCtx := namespace.ContextWithNamespace(b.Core.activeContext, ns)
+	revokeCtx := namespace.ContextWithNamespace(b.Core.activeContext.Load(), ns)
 	if force {
 		err = b.Core.expiration.RevokeForce(revokeCtx, prefix)
 	} else {
@@ -3075,22 +3084,31 @@ func (b *SystemBackend) handleConfigUIHeadersDelete(ctx context.Context, req *lo
 	return nil, nil
 }
 
-// handleKeyStatus returns status information about the backend key
+// handleKeyStatus handles the "/sys/key-status" endpoint
+// to return status information about the (namespace scoped) backend key.
 func (b *SystemBackend) handleKeyStatus(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	// Get the key info
-	info, err := b.Core.barrier.ActiveKeyInfo()
+	ns, err := namespace.FromContext(ctx)
 	if err != nil {
-		return nil, err
+		return handleError(err)
 	}
 
-	resp := &logical.Response{
+	barrier := b.Core.sealManager.NamespaceBarrier(ns.Path)
+	if barrier == nil {
+		return handleError(ErrNotSealable)
+	}
+
+	info, err := barrier.ActiveKeyInfo()
+	if err != nil {
+		return handleError(err)
+	}
+
+	return &logical.Response{
 		Data: map[string]interface{}{
 			"term":         info.Term,
 			"install_time": info.InstallTime.Format(time.RFC3339Nano),
 			"encryptions":  info.Encryptions,
 		},
-	}
-	return resp, nil
+	}, nil
 }
 
 func (b *SystemBackend) handleWrappingWrap(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -4508,7 +4526,7 @@ func (b *SystemBackend) rotateBarrierKey(ctx context.Context) error {
 		// Schedule the destroy of the upgrade path
 		time.AfterFunc(b.Core.KeyRotateGracePeriod(), func() {
 			b.Backend.Logger().Debug("cleaning up upgrade keys", "waited", b.Core.KeyRotateGracePeriod())
-			if err := b.Core.barrier.DestroyUpgrade(b.Core.activeContext, newTerm); err != nil {
+			if err := b.Core.barrier.DestroyUpgrade(b.Core.activeContext.Load(), newTerm); err != nil {
 				b.Backend.Logger().Error("failed to destroy upgrade", "term", newTerm, "error", err)
 			}
 		})
@@ -5260,74 +5278,10 @@ Enable a new audit backend or disable an existing backend.
 	},
 
 	"key-status": {
-		"Provides information about the backend encryption key.",
+		"Provides information about the specific namespace barrier encryption key.",
 		`
-		Provides the current backend encryption key term and installation time.
+		Provides the current encryption key term, installation time and encryption count.
 		`,
-	},
-
-	"rotation-enabled": {
-		"Whether automatic rotation is enabled.",
-		"",
-	},
-	"rotation-max-operations": {
-		"The number of encryption operations performed before the barrier key is automatically rotated.",
-		"",
-	},
-	"rotation-interval": {
-		"How long after installation of an active key term that the key will be automatically rotated.",
-		"",
-	},
-
-	"rotate-keyring": {
-		"Rotates the backend encryption key used to persist data.",
-		`
-		Rotate generates a new encryption key which is used to encrypt all
-		data going to the storage backend. The old encryption keys are kept
-		so that data encrypted using those keys can still be decrypted.
-		`,
-	},
-	"rotate-keyring-config": {
-		"Configures settings related to the backend encryption key management.",
-		`
-		Configures settings related to the automatic rotation of the backend
-		encryption key.
-		`,
-	},
-
-	"rotate-root": {
-		"Perform a root key rotation without requiring key shares to be provided.",
-		"",
-	},
-
-	"rotate-init": {
-		`Initialize, read status or cancel the process of the rotation of
-		the root or recovery key.
-		`,
-		"",
-	},
-
-	"rotate-update": {
-		"Progress the rotation process by providing a single key share.",
-		`This endpoint is used to enter a single key share to progress the
-		rotation of the recovery or root key. If the threshold number of key
-		shares is reached, rotation will be completed. Otherwise, this API
-		must be called multiple times until that threshold is met.
-		The rotation nonce operation must be provided with each call.
-		On the final call, any new key shares will be returned immediately.
-		`,
-	},
-
-	"rotate-verify": {
-		`Read status of, progress or cancel the verification process of the
-		rotation attempt.
-		`,
-		"",
-	},
-
-	"rotate-backup": {
-		"Allows fetching or deleting the backup of the rotated unseal keys.",
-		"",
 	},
 
 	"capabilities": {

@@ -94,7 +94,6 @@ func init() {
 		"internal/counters/activity/monthly",
 		"internal/counters/config",
 		"internal/inspect/router",
-		"key-status",
 		"loggers",
 		"metrics",
 		"mfa/method",
@@ -110,11 +109,6 @@ func init() {
 		"replication/recover",
 		"replication/reindex",
 		"replication/status",
-		"rotate",
-		"rotate/root",
-		"rotate/config",
-		"rotate/keyring",
-		"rotate/keyring/config",
 		"seal",
 		"sealwrap/rewrap",
 		"step-down",
@@ -457,7 +451,7 @@ func (c *Core) CheckToken(ctx context.Context, req *logical.Request, unauth bool
 		delete(req.Headers, consts.InlineAuthPathHeaderName)
 		delete(req.Headers, consts.InlineAuthOperationHeaderName)
 		for header := range req.Headers {
-			if !strings.HasPrefix(header, consts.InlineAuthParameterHeaderPrefix) {
+			if strings.HasPrefix(header, consts.InlineAuthParameterHeaderPrefix) {
 				delete(req.Headers, header)
 			}
 		}
@@ -583,7 +577,7 @@ func (c *Core) switchedLockHandleRequest(httpCtx context.Context, req *logical.R
 		return nil, consts.ErrSealed
 	}
 
-	if c.activeContext == nil || c.activeContext.Err() != nil {
+	if c.activeContext.Load().Err() != nil {
 		if c.standby.Load() {
 			return nil, logical.ErrPerfStandbyPleaseForward
 		}
@@ -594,7 +588,7 @@ func (c *Core) switchedLockHandleRequest(httpCtx context.Context, req *logical.R
 	// so we have a clean context with few values in it, and the http request
 	// context so that if the remote peer closes the connection, we can
 	// properly stop this request.
-	ctx, cancel := context.WithCancel(c.activeContext)
+	ctx, cancel := context.WithCancel(c.activeContext.Load())
 	defer cancel()
 
 	stop := context.AfterFunc(httpCtx, cancel)
@@ -1168,7 +1162,7 @@ func (c *Core) handleRequest(ctx context.Context, req *logical.Request) (retResp
 			// valid request (this is the token's final use). We pass the ID in
 			// directly just to be safe in case something else modifies te later.
 			defer func(id string) {
-				nsActiveCtx := namespace.ContextWithNamespace(c.activeContext, ns)
+				nsActiveCtx := namespace.ContextWithNamespace(c.activeContext.Load(), ns)
 				leaseID, err := c.expiration.CreateOrFetchRevocationLeaseByToken(nsActiveCtx, te)
 				if err == nil {
 					err = c.expiration.LazyRevoke(ctx, leaseID)
@@ -1291,8 +1285,7 @@ func (c *Core) handleRequest(ctx context.Context, req *logical.Request) (retResp
 
 	// If there is a secret, we must register it with the expiration manager.
 	// We exclude renewal of a lease, since it does not need to be re-registered
-	if resp != nil && resp.Secret != nil && !strings.HasPrefix(req.Path, "sys/renew") &&
-		!strings.HasPrefix(req.Path, "sys/leases/renew") {
+	if resp != nil && resp.Secret != nil && !strings.HasPrefix(req.Path, "sys/leases/renew") {
 		// KV mounts should return the TTL but not register
 		// for a lease as this provides a massive slowdown
 		registerLease := true
@@ -1390,10 +1383,14 @@ func (c *Core) handleRequest(ctx context.Context, req *logical.Request) (retResp
 	}
 
 	// Only the token store is allowed to return an auth block, for any
-	// other request this is an internal error.
+	// other request this is an internal error. When the request fails,
+	// do not generate a token even if the backend returned an auth block.
+	if resp != nil && resp.Auth != nil && routeErr != nil {
+		resp.Auth = nil
+	}
 	if resp != nil && resp.Auth != nil {
 		if !strings.HasPrefix(req.Path, "auth/token/") {
-			c.logger.Error("unexpected Auth response for non-token backend", "request_path", req.Path)
+			c.logger.Error("unexpected auth response for non-token backend", "request_path", req.Path)
 			retErr = multierror.Append(retErr, ErrInternalError)
 			return nil, auth, retErr
 		}
@@ -1671,8 +1668,21 @@ func (c *Core) handleLoginRequest(ctx context.Context, req *logical.Request) (re
 		retErr = multierror.Append(retErr, ErrInternalError)
 		return retResp, retAuth, retErr
 	}
+
 	// If the response generated an authentication, then generate the token
+	// only if it did not also err as the err would shadow the token.
+	if resp != nil && resp.Auth != nil && routeErr != nil {
+		resp.Auth = nil
+	}
 	if resp != nil && resp.Auth != nil && req.Path != "sys/mfa/validate" {
+		// When the request path is part of a logical backend (and not a
+		// credential backend), reject the token creation.
+		if !strings.HasPrefix(req.Path, "auth/") {
+			c.logger.Error("unexpected auth response for logical secret backend", "request_path", req.Path)
+			retErr = multierror.Append(retErr, ErrInternalError)
+			return nil, nil, retErr
+		}
+
 		// Check for request role in context to role based quotas
 		var role string
 		reqRole := ctx.Value(logical.CtxKeyRequestRole{})
@@ -2078,7 +2088,7 @@ func (c *Core) isUserLocked(ctx context.Context, mountEntry *routing.MountEntry,
 			return nil, false, fmt.Errorf("could not retrieve namespace from context: %w", err)
 		}
 
-		view := NamespaceScopedView(c.barrier, ns).SubView(coreLockedUsersPath).SubView(loginUserInfoKey.mountAccessor + "/")
+		view := c.NamespaceView(ns).SubView(coreLockedUsersPath + loginUserInfoKey.mountAccessor + "/")
 		existingEntry, err := view.Get(ctx, loginUserInfoKey.aliasName)
 		if err != nil {
 			return nil, false, err
@@ -2356,7 +2366,7 @@ func (c *Core) LocalUpdateUserFailedLoginInfo(ctx context.Context, userKey Faile
 		}
 
 		// Write to the physical backend
-		view := NamespaceScopedView(c.barrier, mountEntry.Namespace).SubView(coreLockedUsersPath).SubView(userKey.mountAccessor + "/")
+		view := c.NamespaceView(mountEntry.Namespace).SubView(coreLockedUsersPath + userKey.mountAccessor + "/")
 		if err := view.Put(ctx, entry); err != nil {
 			c.logger.Error("failed to persist failed login user entry", "namespace", mountEntry.Namespace.Path, "error", err)
 			return err

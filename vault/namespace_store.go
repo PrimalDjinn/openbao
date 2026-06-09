@@ -110,7 +110,7 @@ func NewNamespaceStore(ctx context.Context, core *Core, logger hclog.Logger) (*N
 		creationDeletionMap:  make(map[string]bool),
 	}
 
-	ns.creationDeletionJobContext, ns.creationDeletionJobCancelFunc = context.WithCancel(core.activeContext)
+	ns.creationDeletionJobContext, ns.creationDeletionJobCancelFunc = context.WithCancel(core.activeContext.Load())
 	ns.deletionDispatcher = fairshare.NewJobManager(nsDispatcherName, nsMaxWorkers, ns.logger, core.metricSink)
 	ns.deletionDispatcher.Start()
 
@@ -231,7 +231,9 @@ func (ns *NamespaceStore) loadNamespacesLocked(ctx context.Context) error {
 	namespacesByUUID[namespace.RootNamespaceUUID] = namespace.RootNamespace
 	namespacesByAccessor[namespace.RootNamespaceID] = namespace.RootNamespace
 
-	loadingCallback := func(namespace *namespace.Namespace) error {
+	loadNamespaceInsert := func(namespace *namespace.Namespace) error {
+		ns.logger.Info("discovered namespace", "path", namespace.Path, "uuid", namespace.UUID)
+
 		if _, ok := namespacesByUUID[namespace.UUID]; ok {
 			return fmt.Errorf("namespace with UUID %q is not unique in storage", namespace.UUID)
 		}
@@ -244,7 +246,7 @@ func (ns *NamespaceStore) loadNamespacesLocked(ctx context.Context) error {
 	}
 
 	if err := logical.WithTransaction(ctx, ns.storage, func(s logical.Storage) error {
-		return ns.loadNamespacesRecursive(ctx, s, s, loadingCallback)
+		return ns.loadNamespacesRecursive(ctx, s, s, loadNamespaceInsert)
 	}); err != nil {
 		return err
 	}
@@ -689,9 +691,9 @@ func (ns *NamespaceStore) undoCreateMounts(nsCtx context.Context, namespaceToDel
 	success := true
 
 	// clear auth mounts
-	ns.core.authLock.Lock()
+	ns.core.authLock.RLock()
 	authMountEntries, err := ns.core.auth.FindAllNamespaceMounts(nsCtx)
-	ns.core.authLock.Unlock()
+	ns.core.authLock.RUnlock()
 	if err != nil {
 		ns.logger.Error("failed to retrieve namespace credentials", "namespace", namespaceToDelete.Path, "error", err.Error())
 		success = false
@@ -711,9 +713,9 @@ func (ns *NamespaceStore) undoCreateMounts(nsCtx context.Context, namespaceToDel
 	}
 
 	// clear mounts
-	ns.core.mountsLock.Lock()
+	ns.core.mountsLock.RLock()
 	mountEntries, err := ns.core.mounts.FindAllNamespaceMounts(nsCtx)
-	ns.core.mountsLock.Unlock()
+	ns.core.mountsLock.RUnlock()
 	if err != nil {
 		ns.logger.Error("failed to retrieve namespace mounts", "namespace", namespaceToDelete.Path, "error", err.Error())
 		success = false
@@ -964,7 +966,7 @@ func (ns *NamespaceStore) ListNamespaces(ctx context.Context, includeParent bool
 func (ns *NamespaceStore) SealNamespace(ctx context.Context, path string) error {
 	defer metrics.MeasureSince([]string{"namespace", "seal_namespace"}, time.Now())
 
-	unlock, err := ns.lockWithInvalidation(ctx, false)
+	unlock, err := ns.lockWithInvalidation(ctx, true)
 	if err != nil {
 		return err
 	}
@@ -1017,6 +1019,18 @@ func (ns *NamespaceStore) sealNamespaceLocked(ctx context.Context, namespaceToSe
 				errs = errors.Join(errs, err)
 			}
 		}
+
+		if entry.UUID != namespaceToSeal.UUID {
+			// Remove the namespace itself from our records if it isn't the
+			// sealed namespace. We want to forget child namespaces of a
+			// namespaces which was marked sealed, but retain the pointer to
+			// the sealed namespace itself.
+			if err := ns.namespacesByPath.Delete(entry.Path); err != nil {
+				panic(err)
+			}
+			delete(ns.namespacesByUUID, entry.UUID)
+			delete(ns.namespacesByAccessor, entry.ID)
+		}
 	})
 
 	return errs
@@ -1059,31 +1073,90 @@ func (ns *NamespaceStore) unsealNamespace(ctx context.Context, namespaceToUnseal
 		return unsealed, nil
 	}
 
-	return unsealed, ns.postNamespaceUnseal(ctx, namespaceToUnseal)
+	var collected []*namespace.Namespace
+	collected = append(collected, namespaceToUnseal.Clone(false))
+
+	// Recurse loading all new namespaces starting at this one.
+	if err := func() error {
+		unlock, err := ns.lockWithInvalidation(ctx, true)
+		if err != nil {
+			return err
+		}
+
+		defer func() {
+			if unlock != nil {
+				unlock()
+			}
+		}()
+
+		if err := ns.namespacesByPath.Insert(namespaceToUnseal); err != nil {
+			return err
+		}
+		ns.namespacesByUUID[namespaceToUnseal.UUID] = namespaceToUnseal
+		ns.namespacesByAccessor[namespaceToUnseal.ID] = namespaceToUnseal
+
+		nsStorage := ns.core.NamespaceView(namespaceToUnseal)
+		return logical.WithTransaction(ctx, nsStorage, func(s logical.Storage) error {
+			return ns.loadNamespacesRecursive(ctx, s, s, func(newNs *namespace.Namespace) error {
+				if _, ok := ns.namespacesByUUID[newNs.UUID]; ok {
+					return fmt.Errorf("namespace with UUID %q is not unique in storage", newNs.UUID)
+				}
+				if err := ns.namespacesByPath.Insert(newNs); err != nil {
+					return err
+				}
+				ns.namespacesByUUID[newNs.UUID] = newNs
+				ns.namespacesByAccessor[newNs.ID] = newNs
+
+				collected = append(collected, newNs.Clone(false))
+
+				return nil
+			})
+		})
+	}(); err != nil {
+		return unsealed, err
+	}
+
+	for index, newNs := range collected {
+		ns.logger.Info("calling post-unseal for namespace", "ns_path", newNs.Path, "ns_uuid", newNs.UUID)
+
+		if err := ns.postNamespaceUnseal(ctx, newNs); err != nil {
+			return unsealed, fmt.Errorf("failed to run namespace post-unseal [%d/%v]: %w", index, newNs.ID, err)
+		}
+	}
+
+	return unsealed, nil
 }
 
 // postNamespaceUnseal loads namespace credential and secret mounts,
 // initializes the backends and updates the router.
 func (ns *NamespaceStore) postNamespaceUnseal(ctx context.Context, unsealedNamespace *namespace.Namespace) error {
 	if err := ns.core.loadMountsForNamespace(ctx, unsealedNamespace); err != nil {
-		return err
+		return fmt.Errorf("failed to load mounts for namespace: %w", err)
 	}
 
 	var postUnsealFuncs []func()
 	if postUnsealMountFuncs, err := ns.core.setupMountsForNamespace(ctx, unsealedNamespace); err != nil {
-		return err
+		return fmt.Errorf("failed to setup mounts for namespace: %w", err)
 	} else {
 		postUnsealFuncs = append(postUnsealFuncs, postUnsealMountFuncs...)
 	}
 
 	if err := ns.core.loadCredentialsForNamespace(ctx, unsealedNamespace); err != nil {
-		return err
+		return fmt.Errorf("failed to load credential mounts for namespace: %w", err)
 	}
 
 	if postUnsealCredFuncs, err := ns.core.setupCredentialsForNamespace(ctx, unsealedNamespace); err != nil {
-		return err
+		return fmt.Errorf("failed to setup credential mounts for namespace: %w", err)
 	} else {
 		postUnsealFuncs = append(postUnsealFuncs, postUnsealCredFuncs...)
+	}
+
+	if err := ns.core.loadIdentityStoreArtifactsForNamespace(ctx, unsealedNamespace, ns.core.Standby()); err != nil {
+		return fmt.Errorf("failed to load identity store artifacts for namespace: %w", err)
+	}
+
+	if err := ns.core.loadLoginMFAConfigsForNamespace(ctx, unsealedNamespace); err != nil {
+		return err
 	}
 
 	// now we run the collected post unseal functions to finalize unsealing
@@ -1194,9 +1267,9 @@ func (ns *NamespaceStore) clearNamespaceResources(nsCtx context.Context, parent,
 	}
 
 	// clear auth mounts
-	ns.core.authLock.Lock()
+	ns.core.authLock.RLock()
 	authMountEntries, err := ns.core.auth.FindAllNamespaceMounts(nsCtx)
-	ns.core.authLock.Unlock()
+	ns.core.authLock.RUnlock()
 	if err != nil {
 		return fmt.Errorf("failed to retrieve namespace auth mounts: %w", err)
 	}
@@ -1213,9 +1286,9 @@ func (ns *NamespaceStore) clearNamespaceResources(nsCtx context.Context, parent,
 	}
 
 	// clear mounts
-	ns.core.mountsLock.Lock()
+	ns.core.mountsLock.RLock()
 	mountEntries, err := ns.core.mounts.FindAllNamespaceMounts(nsCtx)
-	ns.core.mountsLock.Unlock()
+	ns.core.mountsLock.RUnlock()
 	if err != nil {
 		return fmt.Errorf("failed to retrieve namespace secret mounts: %w", err)
 	}
@@ -1234,6 +1307,11 @@ func (ns *NamespaceStore) clearNamespaceResources(nsCtx context.Context, parent,
 	// clear identity store
 	if err := ns.core.identityStore.RemoveNamespaceView(entry); err != nil {
 		return fmt.Errorf("failed to clean identity store: %w", err)
+	}
+
+	// clear login mfa
+	if err := ns.core.loginMFABackend.CleanupNamespace(nsCtx, entry, updateStorage); err != nil {
+		return fmt.Errorf("failed to cleanup mfa login configs: %w", err)
 	}
 
 	if updateStorage {

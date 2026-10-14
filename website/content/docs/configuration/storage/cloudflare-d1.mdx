@@ -61,6 +61,38 @@ variables take precedence over values in the configuration file.
 - `ha_enabled` `(string: "false")` – Must not be set to `true`; Cloudflare D1
   does not support OpenBao HA locking.
 
+- `request_timeout` `(string: "5s")` – Deadline for one HTTP attempt against
+  the D1 REST API, including connecting and reading the response.
+
+- `max_retries` `(string: "2")` – Number of retries after a failed attempt,
+  from `0` to `10`. Timeouts, connection errors, HTTP 408, 429 and 5xx
+  responses are retried; other errors, including SQL errors, are not.
+
+- `retry_wait_min` `(string: "100ms")` and `retry_wait_max` `(string: "1s")` –
+  Backoff between attempts. The wait doubles from `retry_wait_min` up to
+  `retry_wait_max` (at most `1m`), with jitter. A `Retry-After` up to
+  `retry_wait_max` is honored; a longer one fails the call immediately.
+
+## Request timeouts and retries
+
+Every storage operation is bounded: with the defaults a call that keeps
+failing returns an error after at most three attempts, about 15 seconds.
+The caller's own deadline or cancellation always wins. Retrying is safe because
+every statement the backend issues is idempotent.
+
+The backend disables the Cloudflare SDK's built-in retries, which would
+otherwise retry up to ten times, sleep up to 30 seconds between attempts and
+honor any `Retry-After`. The D1 REST API counts toward the Cloudflare account's
+API rate limit (1,200 requests per five minutes per user, shared by all of
+that user's tokens). Exceeding the limit blocks the API for five minutes; the
+backend then fails storage calls quickly instead of stalling OpenBao behind
+long waits. Use a dedicated Cloudflare user for the D1 token where possible,
+and keep token churn low (see the AppRole `ttl` login parameter and batch
+tokens).
+
+HTTP/2 connections to the API are health-checked with pings, so a connection
+that stops answering is replaced after about 20 seconds.
+
 ## `cloudflare-d1` examples
 
 Using environment variables:

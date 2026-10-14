@@ -3,15 +3,18 @@ package cloudflare_d1
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/cloudflare/cloudflare-go/v6"
 	"github.com/cloudflare/cloudflare-go/v6/d1"
 	"github.com/cloudflare/cloudflare-go/v6/option"
+	"github.com/cloudflare/cloudflare-go/v6/packages/pagination"
 	log "github.com/hashicorp/go-hclog"
 	"github.com/openbao/openbao/api/v2"
 	"github.com/openbao/openbao/sdk/v2/physical"
@@ -43,8 +46,10 @@ func (d *D1Executor) ExecContext(ctx context.Context, query string, args ...any)
 }
 
 type DB struct {
-	db    *d1.DatabaseService
-	creds D1ConnectionCredentials
+	db     *d1.DatabaseService
+	creds  D1ConnectionCredentials
+	policy requestPolicy
+	logger log.Logger
 }
 
 // CloudflareD1Backend is a physical backend that stores data
@@ -73,11 +78,11 @@ func NewCloudflareD1Backend(conf map[string]string, logger log.Logger) (physical
 	if err != nil {
 		return nil, err
 	}
-	client := cloudflare.NewClient(option.WithAPIToken(creds.APIKey))
-	db := &DB{
-		db:    client.D1.Database,
-		creds: *creds,
+	policy, err := parseRequestPolicy(conf)
+	if err != nil {
+		return nil, err
 	}
+	db := newDB(*creds, policy, logger)
 	if ok, err := db.Ping(); err != nil || !ok {
 		return nil, fmt.Errorf("failed to connect to Cloudflare D1: %w", err)
 	}
@@ -158,18 +163,44 @@ func connectionURL(conf map[string]string) (*D1ConnectionCredentials, error) {
 	}, nil
 }
 
-func (client *DB) Ping() (bool, error) {
-	if client.db == nil {
-		return false, errors.New("backend client is nil")
+// newDB builds the D1 REST client. The SDK's own retries are disabled
+// (cloudflare-go v6 defaults to 10 retries with up to 30 s between them and
+// honors any Retry-After) so that requestPolicy alone bounds each call.
+func newDB(creds D1ConnectionCredentials, policy requestPolicy, logger log.Logger, opts ...option.RequestOption) *DB {
+	if logger == nil {
+		logger = log.NewNullLogger()
 	}
+	warmParamsEncoder()
+	opts = append([]option.RequestOption{
+		option.WithAPIToken(creds.APIKey),
+		option.WithHTTPClient(newHTTPClient()),
+		option.WithMaxRetries(0),
+	}, opts...)
+	return &DB{
+		db:     cloudflare.NewClient(opts...).D1.Database,
+		creds:  creds,
+		policy: policy,
+		logger: logger,
+	}
+}
 
-	ctx := context.Background()
-	_, err := client.db.Query(ctx, client.creds.DatabaseID, d1.DatabaseQueryParams{
-		AccountID: cloudflare.F(client.creds.AccountID),
+// warmParamsEncoder compiles cloudflare-go's cached JSON encoders for every
+// parameter type this backend sends. The SDK's encoder cache writes shared
+// state the first time it meets a new element type in an interface{} field
+// (DatabaseQueryParamsBody.Params), which is a data race when the first
+// queries run concurrently. Once compiled, the cache is only read.
+var warmParamsEncoder = sync.OnceFunc(func() {
+	_, _ = json.Marshal(d1.DatabaseQueryParams{
+		AccountID: cloudflare.F(""),
 		Body: d1.DatabaseQueryParamsBody{
-			Sql: cloudflare.F("SELECT 1"),
+			Sql:    cloudflare.F(""),
+			Params: cloudflare.F[interface{}]([]interface{}{"", 0, int64(0), float64(0), true, nil}),
 		},
 	})
+})
+
+func (client *DB) Ping() (bool, error) {
+	_, err := client.QueryContext(context.Background(), "SELECT 1")
 	return err == nil, err
 }
 
@@ -189,18 +220,33 @@ func (client *DB) QueryContext(ctx context.Context, query string, args ...any) (
 		}
 	}
 
-	res, err := client.db.Query(ctx, client.creds.DatabaseID, d1.DatabaseQueryParams{
+	params := d1.DatabaseQueryParams{
 		AccountID: cloudflare.F(client.creds.AccountID),
 		Body: d1.DatabaseQueryParamsBody{
 			Sql:    cloudflare.F(query),
 			Params: cloudflare.F[interface{}](encodedArgs),
 		},
-	})
-	if err != nil {
-		return nil, err
 	}
+	for attempt := 0; ; attempt++ {
+		res, err := client.queryOnce(ctx, params)
+		if err == nil {
+			return &res.Result, nil
+		}
+		wait, retry := client.policy.nextWait(ctx, attempt, err)
+		if !retry {
+			return nil, fmt.Errorf("cloudflare d1 query failed after %d attempt(s): %w", attempt+1, err)
+		}
+		client.logger.Warn("retrying cloudflare d1 query", "attempt", attempt+1, "wait", wait, "error", err)
+		if err := sleepContext(ctx, wait); err != nil {
+			return nil, fmt.Errorf("cloudflare d1 query abandoned after %d attempt(s): %w", attempt+1, err)
+		}
+	}
+}
 
-	return &res.Result, nil
+func (client *DB) queryOnce(ctx context.Context, params d1.DatabaseQueryParams) (*pagination.SinglePage[d1.QueryResult], error) {
+	ctx, cancel := context.WithTimeout(ctx, client.policy.timeout)
+	defer cancel()
+	return client.db.Query(ctx, client.creds.DatabaseID, params)
 }
 
 func (client *DB) Query(query string, args ...any) (*[]d1.QueryResult, error) {

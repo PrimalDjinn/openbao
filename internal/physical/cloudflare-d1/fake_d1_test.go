@@ -72,7 +72,7 @@ func (f *fakeD1) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeD1Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	columns, err := rows.Columns()
 	if err != nil {
 		writeD1Error(w, http.StatusInternalServerError, err.Error())

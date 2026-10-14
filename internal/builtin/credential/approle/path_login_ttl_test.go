@@ -1,6 +1,7 @@
 package approle
 
 import (
+	"maps"
 	"testing"
 	"time"
 
@@ -54,9 +55,7 @@ func TestAppRole_LoginRequestedTTL(t *testing.T) {
 	})
 	creds := func(extra map[string]any) map[string]any {
 		data := map[string]any{"role_id": roleID, "secret_id": secretID}
-		for k, v := range extra {
-			data[k] = v
-		}
+		maps.Copy(data, extra)
 		return data
 	}
 
@@ -138,9 +137,7 @@ func TestAppRole_LoginRequestValidationKeepsSecretIDUse(t *testing.T) {
 	})
 	for _, extra := range []map[string]any{{"ttl": -1}, {"num_uses": -1}} {
 		data := map[string]any{"role_id": roleID, "secret_id": secretID}
-		for k, v := range extra {
-			data[k] = v
-		}
+		maps.Copy(data, extra)
 		resp := login(t, b, s, data)
 		require.True(t, resp.IsError(), "%v", extra)
 	}

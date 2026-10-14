@@ -194,7 +194,7 @@ var warmParamsEncoder = sync.OnceFunc(func() {
 		AccountID: cloudflare.F(""),
 		Body: d1.DatabaseQueryParamsBody{
 			Sql:    cloudflare.F(""),
-			Params: cloudflare.F[interface{}]([]interface{}{"", 0, int64(0), float64(0), true, nil}),
+			Params: cloudflare.F[any]([]any{"", 0, int64(0), float64(0), true, nil}),
 		},
 	})
 })

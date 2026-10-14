@@ -2,6 +2,7 @@ package approle
 
 import (
 	"encoding/json"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -56,9 +57,7 @@ func TestAppRole_RequestedTokenTTL(t *testing.T) {
 	anonymous.ClearToken()
 	login := func(role string, extra map[string]any) (*api.Secret, error) {
 		data := map[string]any{"role_id": creds[role][0], "secret_id": creds[role][1]}
-		for k, v := range extra {
-			data[k] = v
-		}
+		maps.Copy(data, extra)
 		return anonymous.Logical().Write("auth/approle/login", data)
 	}
 

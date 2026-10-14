@@ -245,10 +245,10 @@ belonging to configured CIDR blocks on the AppRole.
 
 ### Token lifetime
 
-An AppRole token gets its TTL from, in order: the `ttl` given in the login
-request, the AppRole's `token_ttl`, and finally the mount's default lease TTL.
-The result never exceeds the AppRole's `token_max_ttl`, the mount's max lease
-TTL or the system max lease TTL.
+An AppRole token gets its TTL from the AppRole's `token_ttl`, or the mount's
+default lease TTL when the AppRole sets none. A login request can ask for a
+shorter `ttl`, never a longer one. The result never exceeds the AppRole's
+`token_max_ttl`, the mount's max lease TTL or the system max lease TTL.
 
 Clients that log in often and use each token briefly should request a short
 `ttl`, and operators should keep the mount defaults short so that tokens from

@@ -5,5 +5,5 @@ storage/cloudflare-d1: Bound every D1 REST call with a per-attempt deadline (`re
 storage/cloudflare-d1: Avoid a data race in the Cloudflare SDK's JSON encoder cache when the first queries run concurrently.
 ```
 ```release-note:feature
-**AppRole Login TTL**: AppRole login requests accept optional `ttl` and `num_uses` for the issued token. The TTL is capped by the role's `token_max_ttl`, the mount's max lease TTL and the system max; `num_uses` can only lower the role's `token_num_uses`.
+**AppRole Login TTL**: AppRole login requests accept optional `ttl` and `num_uses` for the issued token. Both can only narrow the token: the TTL is capped at the role's `token_ttl` (or the mount's default lease TTL) and `num_uses` at the role's `token_num_uses`.
 ```

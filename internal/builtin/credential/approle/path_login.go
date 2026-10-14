@@ -36,9 +36,10 @@ func pathLogin(b *backend) *framework.Path {
 			},
 			"ttl": {
 				Type: framework.TypeDurationSecond,
-				Description: `Optional TTL of the issued token, replacing the role's token_ttl. It is
-capped by the role's token_max_ttl, the mount's max lease TTL and the system
-max lease TTL. Ignored when the role issues periodic tokens.`,
+				Description: `Optional shorter TTL for the issued token. It can only lower the role's
+token_ttl (or the mount's default lease TTL when the role sets none), so it
+never exceeds the role's token_max_ttl, the mount's max lease TTL or the
+system max lease TTL. Ignored when the role issues periodic tokens.`,
 			},
 			"num_uses": {
 				Type: framework.TypeInt,
@@ -423,7 +424,7 @@ func (b *backend) pathLoginUpdate(ctx context.Context, req *logical.Request, dat
 	auth.BoundCIDRs = tokenBoundCIDRs
 
 	resp := &logical.Response{Auth: auth}
-	for _, warning := range applyRequestedTokenLimits(auth, requestedTTL, requestedNumUses) {
+	for _, warning := range applyRequestedTokenLimits(auth, requestedTTL, requestedNumUses, b.System().DefaultLeaseTTL()) {
 		resp.AddWarning(warning)
 	}
 
@@ -439,15 +440,26 @@ func (b *backend) pathLoginUpdate(ctx context.Context, req *logical.Request, dat
 const requestedTTLKey = "requested_ttl"
 
 // applyRequestedTokenLimits applies the optional ttl and num_uses of a login
-// request. The TTL replaces the role's token_ttl; core still caps it at the
-// role's token_max_ttl, the mount's max lease TTL and the system max, exactly
-// as for token_ttl. The use count may only lower token_num_uses.
-func applyRequestedTokenLimits(auth *logical.Auth, ttl time.Duration, numUses int) []string {
+// request. Both can only narrow the token: the TTL is capped at the role's
+// default (token_ttl, or the mount's default lease TTL when the role sets
+// none), and the use count at token_num_uses. A request therefore never
+// lengthens a token, which matters for batch tokens: they cannot be revoked.
+// Core still applies token_max_ttl, the mount's max lease TTL and the system
+// max on top.
+func applyRequestedTokenLimits(auth *logical.Auth, ttl time.Duration, numUses int, mountDefaultTTL time.Duration) []string {
 	var warnings []string
 	if ttl > 0 {
 		if auth.Period > 0 {
 			warnings = append(warnings, "ttl was ignored because the role issues periodic tokens")
 		} else {
+			limit := auth.TTL
+			if limit <= 0 {
+				limit = mountDefaultTTL
+			}
+			if limit > 0 && ttl > limit {
+				ttl = limit
+				warnings = append(warnings, fmt.Sprintf("ttl was capped at the role's default token TTL of %s", limit))
+			}
 			auth.TTL = ttl
 			auth.InternalData[requestedTTLKey] = int64(ttl / time.Second)
 		}

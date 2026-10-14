@@ -16,8 +16,9 @@ import (
 )
 
 // TestAppRole_RequestedTokenTTL checks, through the full request path, that a
-// login's requested ttl never exceeds the role's token_max_ttl or the mount's
-// max lease TTL, and that a short mount default applies when neither the
+// login's requested ttl can only shorten a token (never past the role's
+// token_ttl, or the mount default when the role sets none, so never past any
+// max either), and that a short mount default applies when neither the
 // request nor the role sets a TTL.
 func TestAppRole_RequestedTokenTTL(t *testing.T) {
 	cluster := vault.NewTestCluster(t, &vault.CoreConfig{
@@ -40,6 +41,7 @@ func TestAppRole_RequestedTokenTTL(t *testing.T) {
 		"bounded": {"token_policies": "default", "token_ttl": "5m", "token_max_ttl": "15m"},
 		"legacy":  {"token_policies": "default", "token_ttl": "8760h"},
 		"batch":   {"token_policies": "default", "token_type": "batch"},
+		"batch5m": {"token_policies": "default", "token_type": "batch", "token_ttl": "5m", "token_max_ttl": "1h"},
 	}
 	creds := map[string][2]string{}
 	for name, data := range roles {
@@ -70,14 +72,17 @@ func TestAppRole_RequestedTokenTTL(t *testing.T) {
 		renewal int // expected TTL after renew-self, 0 to skip
 	}{
 		{name: "mount default when nothing is set", role: "plain", ttl: 600},
-		{name: "requested below mount max", role: "plain", extra: map[string]any{"ttl": "30m"}, ttl: 1800},
-		{name: "requested above mount max is capped", role: "plain", extra: map[string]any{"ttl": "2h"}, ttl: 3600, capped: true},
+		{name: "requested shorter than mount default", role: "plain", extra: map[string]any{"ttl": "2m"}, ttl: 120},
+		{name: "requested above mount default is capped at it", role: "plain", extra: map[string]any{"ttl": "30m"}, ttl: 600, capped: true},
+		{name: "requested above mount max is capped at the default", role: "plain", extra: map[string]any{"ttl": "2h"}, ttl: 600, capped: true},
 		{name: "role token_ttl", role: "bounded", ttl: 300, renewal: 300},
 		{name: "requested shorter than role token_ttl", role: "bounded", extra: map[string]any{"ttl": "1m"}, ttl: 60, renewal: 60},
-		{name: "requested above role token_max_ttl is capped", role: "bounded", extra: map[string]any{"ttl": "20m"}, ttl: 900, capped: true},
+		{name: "requested above role token_ttl is capped at it", role: "bounded", extra: map[string]any{"ttl": "10m"}, ttl: 300, capped: true, renewal: 300},
 		{name: "legacy long role is capped by mount max", role: "legacy", ttl: 3600, capped: true},
 		{name: "legacy long role with requested ttl", role: "legacy", extra: map[string]any{"ttl": "10m"}, ttl: 600},
-		{name: "batch token honors requested ttl", role: "batch", extra: map[string]any{"ttl": "2m"}, ttl: 120},
+		{name: "batch token honors a shorter requested ttl", role: "batch", extra: map[string]any{"ttl": "2m"}, ttl: 120},
+		{name: "batch token is never lengthened past token_ttl", role: "batch5m", extra: map[string]any{"ttl": "30m"}, ttl: 300, capped: true},
+		{name: "batch token without token_ttl is capped at mount default", role: "batch", extra: map[string]any{"ttl": "1h"}, ttl: 600, capped: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			secret, err := login(tc.role, tc.extra)

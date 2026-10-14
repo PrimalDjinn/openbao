@@ -647,12 +647,15 @@ AppRole (such as client IP CIDR) are also evaluated.
 
 - `role_id` `(string: <required>)` - RoleID of the AppRole.
 - `secret_id` `(string: <required>)` - SecretID belonging to AppRole.
-- `ttl` `(string or integer: "")` - Optional TTL of the issued token, as a
-  duration string such as `"10m"` or a number of seconds. It replaces the
-  AppRole's `token_ttl` and is capped, with a warning, by the AppRole's
-  `token_max_ttl`, the mount's max lease TTL and the system max lease TTL. It
-  also applies when the token is renewed. Ignored, with a warning, when the
-  AppRole issues periodic tokens.
+- `ttl` `(string or integer: "")` - Optional shorter TTL for the issued token,
+  as a duration string such as `"10m"` or a number of seconds. It can only
+  lower the token's TTL: a value above the AppRole's `token_ttl` (or the
+  mount's default lease TTL when the AppRole sets none) is capped there with a
+  warning, so a request never lengthens a token, including batch tokens, which
+  cannot be revoked. The AppRole's `token_max_ttl`, the mount's max lease TTL
+  and the system max lease TTL still apply. The requested TTL is also used when
+  the token is renewed. Ignored, with a warning, when the AppRole issues
+  periodic tokens.
 - `num_uses` `(integer: 0)` - Optional number of times the issued token may be
   used. It can lower, but never raise, the AppRole's `token_num_uses`. Batch
   tokens have no use limit.

@@ -78,17 +78,60 @@ func TestAppRole_LoginRequestedTTL(t *testing.T) {
 		require.Equal(t, 500*time.Second, renewed.Auth.MaxTTL)
 	}
 
-	// Longer requests pass through with the role's max_ttl attached; core caps
-	// the issued TTL (covered end to end in external_tests/approle).
+	// A request can only shorten the token: anything above token_ttl is capped.
 	resp = login(t, b, s, creds(map[string]any{"ttl": "1h"}))
 	require.False(t, resp.IsError(), "%v", resp.Error())
-	require.Equal(t, time.Hour, resp.Auth.TTL)
+	require.Equal(t, 400*time.Second, resp.Auth.TTL)
 	require.Equal(t, 500*time.Second, resp.Auth.MaxTTL)
+	require.Contains(t, resp.Warnings, "ttl was capped at the role's default token TTL of 6m40s")
+	renewed = renew(t, b, s, resp.Auth)
+	require.Equal(t, 400*time.Second, renewed.Auth.TTL)
 
 	// An explicit zero means "not requested".
 	resp = login(t, b, s, creds(map[string]any{"ttl": 0}))
 	require.False(t, resp.IsError(), "%v", resp.Error())
 	require.Equal(t, 400*time.Second, resp.Auth.TTL)
+}
+
+func TestAppRole_LoginRequestedTTL_NeverLengthensBatchTokens(t *testing.T) {
+	b, s := createBackendWithStorage(t)
+	roleID, secretID := loginCredentials(t, b, s, "batch", map[string]any{
+		"policies": "default", "token_type": "batch", "token_ttl": 60, "token_max_ttl": 3600,
+	})
+	creds := func(ttl any) map[string]any {
+		return map[string]any{"role_id": roleID, "secret_id": secretID, "ttl": ttl}
+	}
+
+	// Batch tokens cannot be revoked, so a request must never raise their TTL
+	// above token_ttl, even though token_max_ttl would allow it.
+	resp := login(t, b, s, creds("30m"))
+	require.False(t, resp.IsError(), "%v", resp.Error())
+	require.Equal(t, logical.TokenTypeBatch, resp.Auth.TokenType)
+	require.Equal(t, time.Minute, resp.Auth.TTL)
+	require.Contains(t, resp.Warnings, "ttl was capped at the role's default token TTL of 1m0s")
+
+	resp = login(t, b, s, creds("30s"))
+	require.False(t, resp.IsError(), "%v", resp.Error())
+	require.Equal(t, 30*time.Second, resp.Auth.TTL)
+	require.Empty(t, resp.Warnings)
+}
+
+func TestAppRole_LoginRequestedTTL_CappedAtMountDefault(t *testing.T) {
+	// A role without token_ttl falls back to the mount's default lease TTL, which
+	// is then the cap (24h in the test system view).
+	b, s := createBackendWithStorage(t)
+	roleID, secretID := loginCredentials(t, b, s, "plain", map[string]any{"policies": "default", "token_type": "batch"})
+	limit := b.System().DefaultLeaseTTL()
+	require.Positive(t, limit)
+
+	resp := login(t, b, s, map[string]any{"role_id": roleID, "secret_id": secretID, "ttl": int((limit + time.Hour) / time.Second)})
+	require.False(t, resp.IsError(), "%v", resp.Error())
+	require.Equal(t, limit, resp.Auth.TTL)
+	require.Len(t, resp.Warnings, 1)
+
+	resp = login(t, b, s, map[string]any{"role_id": roleID, "secret_id": secretID, "ttl": "5m"})
+	require.False(t, resp.IsError(), "%v", resp.Error())
+	require.Equal(t, 5*time.Minute, resp.Auth.TTL)
 }
 
 func TestAppRole_LoginRequestedTTL_PeriodicRole(t *testing.T) {

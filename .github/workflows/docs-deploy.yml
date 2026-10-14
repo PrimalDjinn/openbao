@@ -23,6 +23,9 @@ concurrency:
 
 jobs:
   deploy:
+    # Only the upstream project has a GitHub Pages site; forks do not, so the
+    # deployment can only fail there.
+    if: github.repository == 'openbao/openbao'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

@@ -42,7 +42,10 @@ func TestD1BackendOverHTTP(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(newFakeD1(t))
 	t.Cleanup(server.Close)
-	db := newTestDB(t, server, fastPolicy)
+	// A functional suite, not a timeout test: allow slow CI machines.
+	policy := fastPolicy
+	policy.timeout = 30 * time.Second
+	db := newTestDB(t, server, policy)
 
 	backend, err := physical_utils.NewGenericSQLBackend(physical_utils.GenericSQLBackendConfig{
 		Client: &D1Executor{db: db}, Dialect: D1Dialect{},

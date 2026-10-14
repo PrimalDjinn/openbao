@@ -32,6 +32,12 @@ func newFakeD1(t *testing.T) *fakeD1 {
 	require.NoError(t, err)
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	// Durability is irrelevant here; skipping fsync keeps slow shared disks
+	// from pushing queries past the client's attempt deadline.
+	for _, pragma := range []string{"PRAGMA synchronous = OFF", "PRAGMA journal_mode = MEMORY"} {
+		_, err := db.Exec(pragma)
+		require.NoError(t, err)
+	}
 	return &fakeD1{db: db}
 }
 

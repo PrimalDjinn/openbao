@@ -243,6 +243,27 @@ not require a credential, but still enforce constraints for login. For
 example, `secret_id_bound_cidrs` will only allow logins coming from IP addresses
 belonging to configured CIDR blocks on the AppRole.
 
+### Token lifetime
+
+An AppRole token gets its TTL from, in order: the `ttl` given in the login
+request, the AppRole's `token_ttl`, and finally the mount's default lease TTL.
+The result never exceeds the AppRole's `token_max_ttl`, the mount's max lease
+TTL or the system max lease TTL.
+
+Clients that log in often and use each token briefly should request a short
+`ttl`, and operators should keep the mount defaults short so that tokens from
+AppRoles without a `token_ttl` do not live for the system default of 32 days:
+
+```shell-session
+$ bao auth tune -default-lease-ttl=10m -max-lease-ttl=1h approle/
+$ bao write auth/approle/login role_id=... secret_id=... ttl=5m
+```
+
+Every service token has a lease that the server keeps until it expires or is
+revoked, so short lifetimes bound memory and storage use. Clients that only
+read secrets can use `token_type=batch`, which issues tokens that are not
+persisted at all.
+
 ## User lockout
 
 If a user provides bad credentials several times in quick succession,

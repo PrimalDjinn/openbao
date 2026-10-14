@@ -34,6 +34,17 @@ func pathLogin(b *backend) *framework.Path {
 				Default:     "",
 				Description: "SecretID belong to the App role",
 			},
+			"ttl": {
+				Type: framework.TypeDurationSecond,
+				Description: `Optional TTL of the issued token, replacing the role's token_ttl. It is
+capped by the role's token_max_ttl, the mount's max lease TTL and the system
+max lease TTL. Ignored when the role issues periodic tokens.`,
+			},
+			"num_uses": {
+				Type: framework.TypeInt,
+				Description: `Optional number of times the issued token may be used. It may lower,
+but never raise, the role's token_num_uses.`,
+			},
 		},
 		Operations: map[logical.Operation]framework.OperationHandler{
 			logical.UpdateOperation: &framework.PathOperation{
@@ -143,6 +154,16 @@ func (b *backend) pathLoginUpdate(ctx context.Context, req *logical.Request, dat
 	roleID := strings.TrimSpace(data.Get("role_id").(string))
 	if roleID == "" {
 		return logical.ErrorResponse("missing role_id"), nil
+	}
+
+	// Validate requested token limits before any secret ID use is consumed.
+	requestedTTL := time.Duration(data.Get("ttl").(int)) * time.Second
+	requestedNumUses := data.Get("num_uses").(int)
+	if requestedTTL < 0 {
+		return logical.ErrorResponse("ttl cannot be negative"), nil
+	}
+	if requestedNumUses < 0 {
+		return logical.ErrorResponse("num_uses cannot be negative"), nil
 	}
 
 	// Look for the storage entry that maps the roleID to role
@@ -401,13 +422,54 @@ func (b *backend) pathLoginUpdate(ctx context.Context, req *logical.Request, dat
 	// Allow for overridden token bound CIDRs
 	auth.BoundCIDRs = tokenBoundCIDRs
 
+	resp := &logical.Response{Auth: auth}
+	for _, warning := range applyRequestedTokenLimits(auth, requestedTTL, requestedNumUses) {
+		resp.AddWarning(warning)
+	}
+
 	if err := logical.EndTxStorage(ctx, req); err != nil {
 		return nil, err
 	}
 
-	return &logical.Response{
-		Auth: auth,
-	}, nil
+	return resp, nil
+}
+
+// requestedTTLKey records a login's requested TTL in the token's internal data
+// so that renewals keep it instead of reverting to the role's token_ttl.
+const requestedTTLKey = "requested_ttl"
+
+// applyRequestedTokenLimits applies the optional ttl and num_uses of a login
+// request. The TTL replaces the role's token_ttl; core still caps it at the
+// role's token_max_ttl, the mount's max lease TTL and the system max, exactly
+// as for token_ttl. The use count may only lower token_num_uses.
+func applyRequestedTokenLimits(auth *logical.Auth, ttl time.Duration, numUses int) []string {
+	var warnings []string
+	if ttl > 0 {
+		if auth.Period > 0 {
+			warnings = append(warnings, "ttl was ignored because the role issues periodic tokens")
+		} else {
+			auth.TTL = ttl
+			auth.InternalData[requestedTTLKey] = int64(ttl / time.Second)
+		}
+	}
+	if numUses > 0 {
+		if auth.NumUses == 0 || numUses <= auth.NumUses {
+			auth.NumUses = numUses
+		} else {
+			warnings = append(warnings, fmt.Sprintf("num_uses was capped at the role's token_num_uses of %d", auth.NumUses))
+		}
+	}
+	return warnings
+}
+
+// loginRequestedTTL returns the TTL a token's login requested, if any.
+func loginRequestedTTL(auth *logical.Auth) (time.Duration, bool) {
+	raw, ok := auth.InternalData[requestedTTLKey]
+	if !ok {
+		return 0, false
+	}
+	ttl, err := parseutil.ParseDurationSecond(raw)
+	return ttl, err == nil && ttl > 0
 }
 
 // Invoked when the token issued by this backend is attempting a renewal.
@@ -432,6 +494,9 @@ func (b *backend) pathLoginRenew(ctx context.Context, req *logical.Request, data
 
 	resp := &logical.Response{Auth: req.Auth}
 	resp.Auth.TTL = role.TokenTTL
+	if ttl, ok := loginRequestedTTL(req.Auth); ok && role.TokenPeriod == 0 {
+		resp.Auth.TTL = ttl
+	}
 	resp.Auth.MaxTTL = role.TokenMaxTTL
 	resp.Auth.Period = role.TokenPeriod
 	return resp, nil

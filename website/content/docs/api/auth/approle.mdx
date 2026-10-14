@@ -647,13 +647,23 @@ AppRole (such as client IP CIDR) are also evaluated.
 
 - `role_id` `(string: <required>)` - RoleID of the AppRole.
 - `secret_id` `(string: <required>)` - SecretID belonging to AppRole.
+- `ttl` `(string or integer: "")` - Optional TTL of the issued token, as a
+  duration string such as `"10m"` or a number of seconds. It replaces the
+  AppRole's `token_ttl` and is capped, with a warning, by the AppRole's
+  `token_max_ttl`, the mount's max lease TTL and the system max lease TTL. It
+  also applies when the token is renewed. Ignored, with a warning, when the
+  AppRole issues periodic tokens.
+- `num_uses` `(integer: 0)` - Optional number of times the issued token may be
+  used. It can lower, but never raise, the AppRole's `token_num_uses`. Batch
+  tokens have no use limit.
 
 ### Sample payload
 
 ```json
 {
   "role_id": "59d6d1ca-47bb-4e7e-a40b-8be3bc5a0ba8",
-  "secret_id": "84896a0c-1347-aa90-a4f6-aca8b7558780"
+  "secret_id": "84896a0c-1347-aa90-a4f6-aca8b7558780",
+  "ttl": "10m"
 }
 ```
 

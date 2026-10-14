@@ -1,0 +1,9 @@
+```release-note:improvement
+storage/cloudflare-d1: Bound every D1 REST call with a per-attempt deadline (`request_timeout`, default 5s) and bounded retries with backoff (`max_retries`, `retry_wait_min`, `retry_wait_max`); a `Retry-After` longer than `retry_wait_max` fails fast. The Cloudflare SDK's own retries (10 by default, up to 30s apart) are disabled.
+```
+```release-note:bug
+storage/cloudflare-d1: Avoid a data race in the Cloudflare SDK's JSON encoder cache when the first queries run concurrently.
+```
+```release-note:feature
+auth/approle: Login requests accept optional `ttl` and `num_uses` for the issued token. The TTL is capped by the role's `token_max_ttl`, the mount's max lease TTL and the system max; `num_uses` can only lower the role's `token_num_uses`.
+```

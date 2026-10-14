@@ -19,7 +19,8 @@ permissions:
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
       # required for all workflows
       security-events: write
@@ -28,12 +29,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - [self-hosted, ubuntu-latest]
-        language:
-          - go
-        build-mode:
-          - autobuild
+        include:
+        - language: go
+          build-mode: autobuild
     steps:
     - name: Checkout repository
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

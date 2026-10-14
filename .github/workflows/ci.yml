@@ -29,11 +29,8 @@ jobs:
     name: Setup
     env:
       BASE_SHA: ${{ github.event.pull_request.head.sha }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os:
-          - [self-hosted, ubuntu-latest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       go-tags: ""
       checkout-ref: ${{ steps.checkout-ref-output.outputs.checkout-ref }}
@@ -68,7 +65,7 @@ jobs:
       total-runners: 16
       go-arch: amd64
       go-tags: "${{ needs.setup.outputs.go-tags }},deadlock"
-      runs-on: '["self-hosted","ubuntu-latest"]'
+      runs-on: ubuntu-latest
       checkout-ref: ${{ needs.setup.outputs.checkout-ref }}
     secrets: inherit
 
@@ -88,7 +85,7 @@ jobs:
       extra-flags: "-race"
       go-arch: amd64
       go-tags: ${{ needs.setup.outputs.go-tags }}
-      runs-on: '["self-hosted","ubuntu-latest"]'
+      runs-on: ubuntu-latest
       name: "race"
       checkout-ref: ${{ needs.setup.outputs.checkout-ref }}
     secrets: inherit
@@ -98,11 +95,8 @@ jobs:
       - setup
       - test-go
     if: always()
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os:
-          - [self-hosted, ubuntu-latest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - run: |
           tr -d '\n' <<< '${{ toJSON(needs.*.result) }}' | grep -q -v -E '(failure|cancelled)'

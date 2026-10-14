@@ -15,11 +15,8 @@ permissions:
 
 jobs:
   go-dependency-submission:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os:
-          - [self-hosted, ubuntu-latest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     

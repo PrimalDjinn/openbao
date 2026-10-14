@@ -13,11 +13,8 @@ permissions:
 jobs:
   sync-deps:
     name: Sync Dependencies
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os:
-          - [self-hosted, ubuntu-latest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: write
     steps:

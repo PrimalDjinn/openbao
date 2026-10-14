@@ -20,11 +20,8 @@ concurrency:
 jobs:
   codechecker:
     name: Code checks
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os:
-          - [self-hosted, ubuntu-latest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       GOLANGCI_LINT_VERSION: v2.13.1
     steps:
@@ -57,11 +54,8 @@ jobs:
 
   semgrep:
     name: Semgrep
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os:
-          - [self-hosted, ubuntu-latest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     container:
       image: docker.io/semgrep/semgrep:1.171.0@sha256:bdf7013b2c3634a487671158da77c554f531742326b543a9464d2adf6c433ac8
     # Skip any PR created by dependabot and any check triggered by merge group
@@ -76,11 +70,8 @@ jobs:
 
   gomod:
     name: Go mod checks
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os:
-          - [self-hosted, ubuntu-latest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/set-up-go
@@ -99,11 +90,8 @@ jobs:
     # unless there is a `no-el8gobuild` label
     # if: "!contains(github.event.pull_request.labels.*.name, 'no-el8gobuild')"
     name: EL8 Go build checks
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os:
-          - [self-hosted, ubuntu-latest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     container: ghcr.io/almalinux/8-base
     steps:
       - name: Install required packages
@@ -127,11 +115,8 @@ jobs:
 
   protobuf:
     name: Protobuf checks
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os:
-          - [self-hosted, ubuntu-latest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     if: github.base_ref == 'main'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

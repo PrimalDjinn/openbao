@@ -1,0 +1,28 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
+syntax = "proto3";
+
+option go_package = "github.com/openbao/openbao/v2/internal/vault/tokens";
+
+package tokens;
+
+// SignedToken 
+message SignedToken {
+    uint64 token_version = 1;  // always 1 for now
+    bytes hmac = 2;        // HMAC of token
+    bytes token = 3;       // protobuf-marshalled Token message
+}
+
+message Token {
+    string random = 1;       // unencoded equiv of former $randbase62
+
+    // Fields 2 was present from Vault and was empty (0) for all OpenBao
+    // releases, making it safe to ignore.
+
+    uint32 index_epoch = 3;
+
+    // OpenBao specific fields.
+
+    string local_index = 50; // required storage state to have this token
+}

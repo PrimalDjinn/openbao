@@ -78,3 +78,24 @@ seal "static" {
   current_key    = "env://BAO_STATIC_SEAL_KEY"
 }
 ```
+
+## Listing nested secrets
+
+Paths are prefixes, not directory records. A secret such as `staging/private`
+can coexist with `staging/private/app/deployment`. Deleting the exact parent
+secret does not delete its descendants. Both regular and paginated listings
+continue to show `private/` while any descendant exists, even if no parent
+secret was ever written. Prefix matching is case-sensitive and treats `%`, `_`
+and other characters literally.
+
+Older D1 backend builds listed only immediate parents. Deleting a parent
+secret could therefore hide deeper descendants from ancestor listings without
+deleting their stored values. Upgrade the OpenBao server to a build containing
+the descendant-listing fix; no schema change, secret rewrite or placeholder
+creation is required. Existing flat public/private secrets and initialization
+commands continue to work unchanged.
+
+To investigate a missing listing, check an exact known secret path and its
+KV metadata before taking recovery action. A soft-deleted KV v2 version can be
+undeleted; destroyed versions or deleted metadata require a separate backup.
+A recursive delete operation still deletes the selected descendants.

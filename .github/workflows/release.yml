@@ -24,11 +24,8 @@ permissions:
 jobs:
   setup:
     name: Setup
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os:
-          - [self-hosted, ubuntu-latest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -77,11 +74,8 @@ jobs:
 
   build-ui:
     name: Build UI
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os:
-          - [self-hosted, ubuntu-latest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs:
       - setup
     steps:
@@ -109,7 +103,8 @@ jobs:
 
   build:
     name: Build ${{ matrix.target.os }}/${{ matrix.target.arch }}
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
     needs:
       - setup
       - build-ui
@@ -125,8 +120,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - [self-hosted, ubuntu-latest]
         target:
           - { os: linux,   arch: amd64       }
           - { os: linux,   arch: arm64       }
@@ -240,11 +233,8 @@ jobs:
 
   build-dist:
     name: Build distribution source tarball
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os:
-          - [self-hosted, ubuntu-latest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: write
     needs:
@@ -326,11 +316,8 @@ jobs:
 
   release:
     name: Create release
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os:
-          - [self-hosted, ubuntu-latest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs:
       - setup
       - build

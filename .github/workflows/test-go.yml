@@ -25,10 +25,10 @@ on:
         type: string
         default: ""
       runs-on:
-        description: An expression indicating which kind of runners to use.
+        description: The GitHub-hosted runner label to run the jobs on.
         required: false
         type: string
-        default: '["self-hosted","ubuntu-latest"]'
+        default: ubuntu-latest
       go-tags:
         description: A comma-separated list of additional build tags to consider satisfied during the build.
         required: false
@@ -61,11 +61,8 @@ permissions:
 
 jobs:
   test-matrix:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os:
-          - ${{ fromJSON(inputs.runs-on) }}
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -127,15 +124,14 @@ jobs:
 
   test-go:
     needs: test-matrix
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: 120
     permissions:
       contents: read
       actions: write
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ${{ fromJSON(inputs.runs-on) }}
         id: ${{ fromJSON(needs.test-matrix.outputs.matrix_ids) }}
     env:
       TIMEOUT_IN_MINUTES: ${{ inputs.timeout-minutes }}
@@ -284,11 +280,8 @@ jobs:
   test-collect-reports:
     if: ${{ ! cancelled() }}
     needs: [test-go, test-matrix]
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os:
-          - ${{ fromJSON(inputs.runs-on) }}
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: 15
     permissions:
       contents: read
       actions: write

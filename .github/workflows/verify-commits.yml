@@ -11,11 +11,8 @@ permissions:
 jobs:
   verify_commits:
     name: Verify Commit Signatures
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os:
-          - [self-hosted, ubuntu-latest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: read

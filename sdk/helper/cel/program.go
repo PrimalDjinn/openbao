@@ -7,14 +7,14 @@ import (
 	"context"
 	"fmt"
 
+	"cel.dev/cel-go/cel"
+	"cel.dev/cel-go/common/decls"
+	celenv "cel.dev/cel-go/common/env"
+	"cel.dev/cel-go/common/operators"
+	"cel.dev/cel-go/common/overloads"
+	"cel.dev/cel-go/common/types"
+	"cel.dev/cel-go/common/types/ref"
 	"github.com/go-viper/mapstructure/v2"
-	"github.com/google/cel-go/cel"
-	"github.com/google/cel-go/common/decls"
-	celenv "github.com/google/cel-go/common/env"
-	"github.com/google/cel-go/common/operators"
-	"github.com/google/cel-go/common/overloads"
-	"github.com/google/cel-go/common/types"
-	"github.com/google/cel-go/common/types/ref"
 
 	"github.com/openbao/openbao/sdk/v2/framework"
 )
@@ -96,7 +96,7 @@ func (e *EvalConfig) ToOptions() []cel.EnvOption {
 }
 
 func (e *EvalConfig) ToEnv() (*cel.Env, error) {
-	// See https://github.com/google/cel-go/issues/1221
+	// See https://github.com/cel-expr/cel-go/issues/1221
 	//
 	// We wish to build an environment that behaves like the standard library
 	// but looses the type checking requirements around ternaries as we
@@ -179,7 +179,7 @@ func JSONProgramFromRequest(data *framework.FieldData) (*Program, error) {
 }
 
 // parseCompileAndEvaluateExpression parses, compiles, and evaluates a CEL expression
-func parseCompileAndEvaluateExpression(ctx context.Context, env *cel.Env, expression string, evaluationData map[string]interface{}) (ref.Val, error) {
+func parseCompileAndEvaluateExpression(ctx context.Context, env *cel.Env, expression string, evaluationData map[string]any) (ref.Val, error) {
 	// Parse the expression
 	ast, issues := env.Parse(expression)
 	if issues != nil && issues.Err() != nil {
@@ -202,7 +202,7 @@ func parseCompileAndEvaluateExpression(ctx context.Context, env *cel.Env, expres
 	return result, nil
 }
 
-func (v *Variable) Evaluate(ctx context.Context, env *cel.Env, evalData map[string]interface{}) (*cel.Env, error) {
+func (v *Variable) Evaluate(ctx context.Context, env *cel.Env, evalData map[string]any) (*cel.Env, error) {
 	result, err := parseCompileAndEvaluateExpression(ctx, env, v.Expression, evalData)
 	if err != nil {
 		return nil, err
@@ -217,7 +217,7 @@ func (v *Variable) Evaluate(ctx context.Context, env *cel.Env, evalData map[stri
 	)
 }
 
-func (p *Program) EvaluateVars(ctx context.Context, env *cel.Env, evalData map[string]interface{}) (*cel.Env, error) {
+func (p *Program) EvaluateVars(ctx context.Context, env *cel.Env, evalData map[string]any) (*cel.Env, error) {
 	var err error
 	for index, variable := range p.Variables {
 		env, err = variable.Evaluate(ctx, env, evalData)
@@ -229,7 +229,7 @@ func (p *Program) EvaluateVars(ctx context.Context, env *cel.Env, evalData map[s
 	return env, nil
 }
 
-func (p *Program) Evaluate(ctx context.Context, config *EvalConfig, evalData map[string]interface{}) (ref.Val, error) {
+func (p *Program) Evaluate(ctx context.Context, config *EvalConfig, evalData map[string]any) (ref.Val, error) {
 	env, err := config.ToEnv()
 	if err != nil {
 		return nil, fmt.Errorf("failed to render config to CEL environment: %w", err)

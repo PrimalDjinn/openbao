@@ -1,0 +1,3 @@
+```release-note:bug
+storage/cloudflare-d1: Keep nested paths visible in regular and paginated listings when parent secrets are absent or deleted, using the existing index without a data migration.
+```

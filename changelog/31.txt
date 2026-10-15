@@ -1,0 +1,9 @@
+```release-note:improvement
+storage/cloudflare-d1: Bound every D1 REST call with a per-attempt deadline (`request_timeout`, default 5s) and bounded retries with backoff (`max_retries`, `retry_wait_min`, `retry_wait_max`); a `Retry-After` longer than `retry_wait_max` fails fast. The Cloudflare SDK's own retries (10 by default, up to 30s apart) are disabled.
+```
+```release-note:bug
+storage/cloudflare-d1: Avoid a data race in the Cloudflare SDK's JSON encoder cache when the first queries run concurrently.
+```
+```release-note:feature
+**AppRole Login TTL**: AppRole login requests accept optional `ttl` and `num_uses` for the issued token. Both can only narrow the token: the TTL is capped at the role's `token_ttl` (or the mount's default lease TTL) and `num_uses` at the role's `token_num_uses`.
+```

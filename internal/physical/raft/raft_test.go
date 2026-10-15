@@ -1,0 +1,810 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
+package raft
+
+import (
+	"bytes"
+	"crypto/md5"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"math"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/go-test/deep"
+	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/go-secure-stdlib/base62"
+	"github.com/hashicorp/go-uuid"
+	"github.com/hashicorp/raft"
+	"github.com/openbao/openbao/sdk/v2/helper/jsonutil"
+	"github.com/openbao/openbao/sdk/v2/logical"
+	"github.com/openbao/openbao/sdk/v2/physical"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	bolt "go.etcd.io/bbolt"
+	"google.golang.org/protobuf/proto"
+)
+
+func compareFSMs(t *testing.T, fsm1, fsm2 *FSM) {
+	t.Helper()
+	if err := compareFSMsWithErr(t, fsm1, fsm2); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func compareFSMsWithErr(t *testing.T, fsm1, fsm2 *FSM) error {
+	t.Helper()
+	index1, config1 := fsm1.LatestState()
+	index2, config2 := fsm2.LatestState()
+
+	if !proto.Equal(index1, index2) {
+		return fmt.Errorf("indexes did not match: %+v != %+v", index1, index2)
+	}
+	if !proto.Equal(config1, config2) {
+		return fmt.Errorf("configs did not match: %+v != %+v", config1, config2)
+	}
+
+	return compareDBs(t, fsm1.getDB(), fsm2.getDB(), false)
+}
+
+func compareDBs(t *testing.T, boltDB1, boltDB2 *bolt.DB, dataOnly bool) error {
+	t.Helper()
+	db1 := make(map[string]string)
+	db2 := make(map[string]string)
+
+	err := boltDB1.View(func(tx *bolt.Tx) error {
+		c := tx.Cursor()
+		for bucketName, _ := c.First(); bucketName != nil; bucketName, _ = c.Next() {
+			if dataOnly && !bytes.Equal(bucketName, dataBucketName) {
+				continue
+			}
+
+			b := tx.Bucket(bucketName)
+
+			cBucket := b.Cursor()
+
+			for k, v := cBucket.First(); k != nil; k, v = cBucket.Next() {
+				db1[string(k)] = base64.StdEncoding.EncodeToString(v)
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = boltDB2.View(func(tx *bolt.Tx) error {
+		c := tx.Cursor()
+		for bucketName, _ := c.First(); bucketName != nil; bucketName, _ = c.Next() {
+			if dataOnly && !bytes.Equal(bucketName, dataBucketName) {
+				continue
+			}
+			b := tx.Bucket(bucketName)
+
+			c := b.Cursor()
+
+			for k, v := c.First(); k != nil; k, v = c.Next() {
+				db2[string(k)] = base64.StdEncoding.EncodeToString(v)
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if diff := deep.Equal(db1, db2); diff != nil {
+		return fmt.Errorf("%+v", diff)
+	}
+
+	return nil
+}
+
+func TestRaft_Backend(t *testing.T) {
+	t.Parallel()
+	b := GetRaft(t, true, true)
+
+	physical.ExerciseBackend(t, b)
+}
+
+func TestRaft_TransactionalBackend(t *testing.T) {
+	t.Parallel()
+	b := GetRaft(t, true, true)
+
+	physical.ExerciseTransactionalBackend(t, b)
+
+	testRaft_assertFastTxnTrackerCleanup(t, b)
+}
+
+func TestRaft_TransactionLeak(t *testing.T) {
+	t.Parallel()
+	b := GetRaft(t, true, true)
+
+	// create a logger, which we can inspect
+	writer := &bytes.Buffer{}
+	var writerLock sync.Mutex
+	logger := hclog.New(&hclog.LoggerOptions{
+		Output:      writer,
+		Mutex:       &writerLock,
+		JSONFormat:  true,
+		DisableTime: true,
+	})
+	b.logger = logger
+	decoder := json.NewDecoder(writer)
+
+	// start transaction
+	tx, err := b.BeginTx(t.Context())
+	require.NoError(t, err)
+
+	_, err = tx.List(t.Context(), "list/me")
+	require.NoError(t, err)
+
+	_, err = tx.Get(t.Context(), "read/me")
+	require.NoError(t, err)
+
+	err = tx.Put(t.Context(), &physical.Entry{
+		Key:   "write/me",
+		Value: []byte("value"),
+	})
+	require.NoError(t, err)
+
+	err = tx.Delete(t.Context(), "delete/me")
+	require.NoError(t, err)
+
+	// leak transaction
+	tx = nil
+
+	// wait for log
+	found := false
+	for range 100 {
+		runtime.GC()
+
+		writerLock.Lock()
+		for writer.Len() > 0 {
+			logEntry := map[string]any{}
+			err := decoder.Decode(&logEntry)
+			require.True(t, err == nil || errors.Is(err, io.EOF))
+
+			if logEntry["@level"] == "error" && logEntry["@message"] == "transaction was leaked" {
+				found = true
+				assert.ElementsMatch(t, []any{"list/me"}, logEntry["listed_keys"])
+				assert.ElementsMatch(t, []any{"read/me", "write/me", "delete/me"}, logEntry["read_keys"])
+				assert.ElementsMatch(t, []any{"write/me", "delete/me"}, logEntry["updated_keys"])
+			}
+		}
+		writerLock.Unlock()
+
+		if found {
+			break
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	assert.True(t, found, "expected log message not found")
+	assert.Equal(t, int64(1), b.transactionLeakCounter.Load())
+
+	// assert clean-up
+	assert.Equal(t, uint64(math.MaxUint64), b.fsm.fastTxnTracker.lowestActiveIndex())
+	assert.Equal(t, 0, b.txnPermitPool.CurrentPermits())
+}
+
+func TestRaft_ParseAutopilotUpgradeVersion(t *testing.T) {
+	t.Parallel()
+	raftDir := t.TempDir()
+
+	conf := map[string]string{
+		"path":                      raftDir,
+		"node_id":                   "abc123",
+		"autopilot_upgrade_version": "hahano",
+	}
+
+	_, err := NewRaftBackend(conf, hclog.NewNullLogger())
+	if err == nil {
+		t.Fatal("expected an error but got none")
+	}
+
+	if !strings.Contains(err.Error(), "does not parse") {
+		t.Fatal("expected an error about unparseable versions but got none")
+	}
+}
+
+func TestRaft_ParseNonVoter(t *testing.T) {
+	p := func(s string) *string {
+		return &s
+	}
+
+	for _, retryJoinConf := range []string{"", "not-empty"} {
+		t.Run(retryJoinConf, func(t *testing.T) {
+			for name, tc := range map[string]struct {
+				envValue             *string
+				configValue          *string
+				expectNonVoter       bool
+				invalidNonVoterValue bool
+			}{
+				"valid false":                {nil, p("false"), false, false},
+				"valid true":                 {nil, p("true"), true, false},
+				"invalid empty":              {nil, p(""), false, true},
+				"invalid truthy":             {nil, p("no"), false, true},
+				"invalid":                    {nil, p("totallywrong"), false, true},
+				"valid env false":            {p("false"), nil, true, false},
+				"valid env true":             {p("true"), nil, true, false},
+				"valid env not boolean":      {p("anything"), nil, true, false},
+				"valid env empty":            {p(""), nil, false, false},
+				"neither set, default false": {nil, nil, false, false},
+				"both set, env preferred":    {p("true"), p("false"), true, false},
+			} {
+				t.Run(name, func(t *testing.T) {
+					if tc.envValue != nil {
+						t.Setenv(EnvVaultRaftNonVoter, *tc.envValue)
+					}
+					raftDir := t.TempDir()
+
+					conf := map[string]string{
+						"path":       raftDir,
+						"node_id":    "abc123",
+						"retry_join": retryJoinConf,
+					}
+					if tc.configValue != nil {
+						conf[raftNonVoterConfigKey] = *tc.configValue
+					}
+
+					backend, err := NewRaftBackend(conf, hclog.NewNullLogger())
+					switch {
+					case tc.invalidNonVoterValue || (retryJoinConf == "" && tc.expectNonVoter):
+						if err == nil {
+							t.Fatal("expected an error but got none")
+						}
+					default:
+						if err != nil {
+							t.Fatalf("expected no error but got: %s", err)
+						}
+
+						raftBackend := backend.(*RaftBackend)
+						if tc.expectNonVoter != raftBackend.NonVoter() {
+							t.Fatalf("expected %s %v but got %v", raftNonVoterConfigKey, tc.expectNonVoter, raftBackend.NonVoter())
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestRaft_Backend_LargeKey(t *testing.T) {
+	t.Parallel()
+	b := GetRaft(t, true, true)
+
+	key, err := base62.Random(bolt.MaxKeySize + 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := &physical.Entry{Key: key, Value: []byte(key)}
+
+	err = b.Put(t.Context(), entry)
+	if err == nil {
+		t.Fatal("expected error for put entry")
+	}
+
+	if !strings.Contains(err.Error(), physical.ErrKeyTooLarge) {
+		t.Fatalf("expected %q, got %v", physical.ErrKeyTooLarge, err)
+	}
+
+	out, err := b.Get(t.Context(), entry.Key)
+	if err != nil {
+		t.Fatalf("unexpected error after failed put: %v", err)
+	}
+	if out != nil {
+		t.Fatal("expected response entry to be nil after a failed put")
+	}
+}
+
+func TestRaft_Backend_LargeValue(t *testing.T) {
+	t.Parallel()
+	b := GetRaft(t, true, true)
+
+	value := make([]byte, defaultMaxEntrySize+1)
+	rand.Read(value)
+	entry := &physical.Entry{Key: "foo", Value: value}
+
+	err := b.Put(t.Context(), entry)
+	if err == nil {
+		t.Fatal("expected error for put entry")
+	}
+
+	if !strings.Contains(err.Error(), physical.ErrValueTooLarge) {
+		t.Fatalf("expected %q, got %v", physical.ErrValueTooLarge, err)
+	}
+
+	out, err := b.Get(t.Context(), entry.Key)
+	if err != nil {
+		t.Fatalf("unexpected error after failed put: %v", err)
+	}
+	if out != nil {
+		t.Fatal("expected response entry to be nil after a failed put")
+	}
+}
+
+func TestRaft_Backend_ListPrefix(t *testing.T) {
+	t.Parallel()
+	b := GetRaft(t, true, true)
+
+	physical.ExerciseBackend_ListPrefix(t, b)
+}
+
+func TestRaft_HABackend(t *testing.T) {
+	t.Skip()
+	t.Parallel()
+	raft := GetRaft(t, true, true)
+	raft2 := GetRaft(t, false, true)
+
+	// Add raft2 to the cluster
+	addPeer(t, raft, raft2)
+
+	physical.ExerciseHABackend(t, raft, raft2)
+
+	testRaft_assertFastTxnTrackerCleanup(t, raft)
+	testRaft_assertFastTxnTrackerCleanup(t, raft2)
+}
+
+func TestRaft_Backend_ThreeNode(t *testing.T) {
+	t.Parallel()
+	raft1 := GetRaft(t, true, true)
+	raft2 := GetRaft(t, false, true)
+	raft3 := GetRaft(t, false, true)
+
+	// Add raft2 to the cluster
+	addPeer(t, raft1, raft2)
+
+	// Add raft3 to the cluster
+	addPeer(t, raft1, raft3)
+
+	physical.ExerciseBackend(t, raft1)
+
+	time.Sleep(10 * time.Second)
+	// Make sure all stores are the same
+	compareFSMs(t, raft1.fsm, raft2.fsm)
+	compareFSMs(t, raft1.fsm, raft3.fsm)
+
+	testRaft_assertFastTxnTrackerCleanup(t, raft1)
+	testRaft_assertFastTxnTrackerCleanup(t, raft2)
+	testRaft_assertFastTxnTrackerCleanup(t, raft3)
+
+	testRaft_leaderConsistency(t, raft1, raft2, raft3)
+}
+
+func testRaft_assertFastTxnTrackerCleanup(t testing.TB, raft *RaftBackend) {
+	t.Helper()
+	if assert.Equal(t, raft.fsm.fastTxnTracker.lowestActiveIndex(), uint64(math.MaxUint64), "the test assumes that no transaction is in flight") {
+		assert.Len(
+			t, raft.fsm.fastTxnTracker.indexModifiedMap,
+			2,
+			"two entries are expected: the one that was the latest when we applied the final operation and the final operation itself",
+			// Why? we can not evict the currently active as a new transaction might be started concurrently to our apply
+			// neither can the latest operation itself, for the same reason
+			// Put in other words: Once the indexModifiedMap has reached a length of 2, it should never fall below 2 again.
+		)
+		assert.Empty(t, raft.fsm.fastTxnTracker.sourceIndexMap)
+	}
+}
+
+func testRaft_leaderConsistency(t testing.TB, rafts ...*RaftBackend) {
+	var leaders []string
+
+	for i, b := range rafts {
+		resp, err := b.GetConfiguration(t.Context())
+		require.NoError(t, err)
+		for _, server := range resp.Servers {
+			if server.Leader {
+				leaders = append(leaders, server.NodeID)
+				break
+			}
+		}
+		if i == 0 {
+			continue
+		}
+		assert.Equal(t, leaders[i-1], leaders[i])
+	}
+}
+
+func TestRaft_GetOfflineConfig(t *testing.T) {
+	t.Parallel()
+	// Create 3 raft nodes
+	raft1 := GetRaft(t, true, true)
+	raft2 := GetRaft(t, false, true)
+	raft3 := GetRaft(t, false, true)
+
+	// Add them all to the cluster
+	addPeer(t, raft1, raft2)
+	addPeer(t, raft1, raft3)
+
+	// Add some data into the FSM
+	physical.ExerciseBackend(t, raft1)
+
+	time.Sleep(10 * time.Second)
+
+	// Spin down the raft cluster and check that GetConfigurationOffline
+	// returns 3 voters
+	raft3.TeardownCluster(nil)
+	raft2.TeardownCluster(nil)
+	raft1.TeardownCluster(nil)
+
+	conf, err := raft1.GetConfigurationOffline()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(conf.Servers) != 3 {
+		t.Fatalf("three raft nodes existed but we only see %d", len(conf.Servers))
+	}
+	for _, s := range conf.Servers {
+		if s.Voter != true {
+			t.Fatal("one of the nodes is not a voter")
+		}
+	}
+}
+
+func TestRaft_Recovery(t *testing.T) {
+	t.Parallel()
+
+	// Create 4 raft nodes
+	raft1 := GetRaft(t, true, true)
+	dir1 := raft1.dataDir
+	raft2 := GetRaft(t, false, true)
+	dir2 := raft2.dataDir
+	raft3 := GetRaft(t, false, true)
+	raft4 := GetRaft(t, false, true)
+	dir4 := raft4.dataDir
+
+	// Add them all to the cluster
+	addPeer(t, raft1, raft2)
+	addPeer(t, raft1, raft3)
+	addPeer(t, raft1, raft4)
+
+	// Add some data into the FSM
+	physical.ExerciseBackend(t, raft1)
+
+	time.Sleep(10 * time.Second)
+
+	// Bring down all nodes
+	raft1.TeardownCluster(nil)
+	raft2.TeardownCluster(nil)
+	raft3.TeardownCluster(nil)
+	raft4.TeardownCluster(nil)
+
+	// Prepare peers.json
+	type RecoveryPeer struct {
+		ID       string `json:"id"`
+		Address  string `json:"address"`
+		NonVoter bool   `json:"non_voter"`
+	}
+
+	// Leave out node 1 during recovery
+	peersList := make([]*RecoveryPeer, 0, 3)
+	peersList = append(peersList, &RecoveryPeer{
+		ID:       raft1.NodeID(),
+		Address:  raft1.NodeID(),
+		NonVoter: false,
+	})
+	peersList = append(peersList, &RecoveryPeer{
+		ID:       raft2.NodeID(),
+		Address:  raft2.NodeID(),
+		NonVoter: false,
+	})
+	peersList = append(peersList, &RecoveryPeer{
+		ID:       raft4.NodeID(),
+		Address:  raft4.NodeID(),
+		NonVoter: false,
+	})
+
+	peersJSONBytes, err := jsonutil.EncodeJSON(peersList)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.WriteFile(filepath.Join(filepath.Join(dir1, raftState), "peers.json"), peersJSONBytes, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.WriteFile(filepath.Join(filepath.Join(dir2, raftState), "peers.json"), peersJSONBytes, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.WriteFile(filepath.Join(filepath.Join(dir4, raftState), "peers.json"), peersJSONBytes, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Bring up the nodes again
+	require.NoError(t, raft1.SetupCluster(t.Context(), SetupOpts{}))
+	require.NoError(t, raft2.SetupCluster(t.Context(), SetupOpts{}))
+	require.NoError(t, raft4.SetupCluster(t.Context(), SetupOpts{}))
+
+	peers, err := raft1.Peers(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(peers) != 3 {
+		t.Fatal("failed to recover the cluster")
+	}
+
+	time.Sleep(10 * time.Second)
+
+	compareFSMs(t, raft1.fsm, raft2.fsm)
+	compareFSMs(t, raft1.fsm, raft4.fsm)
+
+	testRaft_assertFastTxnTrackerCleanup(t, raft1)
+	testRaft_assertFastTxnTrackerCleanup(t, raft2)
+	testRaft_assertFastTxnTrackerCleanup(t, raft3)
+}
+
+func TestRaft_Backend_Performance(t *testing.T) {
+	t.Parallel()
+	b := GetRaft(t, false, false)
+	dir := b.dataDir
+
+	defaultConfig := raft.DefaultConfig()
+
+	localConfig := raft.DefaultConfig()
+	b.applyConfigSettings(localConfig)
+
+	if localConfig.ElectionTimeout != defaultConfig.ElectionTimeout*5 {
+		t.Fatalf("bad config: %v", localConfig)
+	}
+	if localConfig.HeartbeatTimeout != defaultConfig.HeartbeatTimeout*5 {
+		t.Fatalf("bad config: %v", localConfig)
+	}
+	if localConfig.LeaderLeaseTimeout != defaultConfig.LeaderLeaseTimeout*5 {
+		t.Fatalf("bad config: %v", localConfig)
+	}
+
+	b.conf = map[string]string{
+		"path":                   dir,
+		"performance_multiplier": "5",
+	}
+
+	localConfig = raft.DefaultConfig()
+	b.applyConfigSettings(localConfig)
+
+	if localConfig.ElectionTimeout != defaultConfig.ElectionTimeout*5 {
+		t.Fatalf("bad config: %v", localConfig)
+	}
+	if localConfig.HeartbeatTimeout != defaultConfig.HeartbeatTimeout*5 {
+		t.Fatalf("bad config: %v", localConfig)
+	}
+	if localConfig.LeaderLeaseTimeout != defaultConfig.LeaderLeaseTimeout*5 {
+		t.Fatalf("bad config: %v", localConfig)
+	}
+
+	b.conf = map[string]string{
+		"path":                   dir,
+		"performance_multiplier": "1",
+	}
+
+	localConfig = raft.DefaultConfig()
+	b.applyConfigSettings(localConfig)
+
+	if localConfig.ElectionTimeout != defaultConfig.ElectionTimeout {
+		t.Fatalf("bad config: %v", localConfig)
+	}
+	if localConfig.HeartbeatTimeout != defaultConfig.HeartbeatTimeout {
+		t.Fatalf("bad config: %v", localConfig)
+	}
+	if localConfig.LeaderLeaseTimeout != defaultConfig.LeaderLeaseTimeout {
+		t.Fatalf("bad config: %v", localConfig)
+	}
+}
+
+func TestRaft_Backend_PutTxnMargin(t *testing.T) {
+	t.Parallel()
+	b := GetRaft(t, true, true)
+
+	// Ensure different key sizes don't change the results.
+	for _, keySize := range []int{1, 3, 13, 34, 144, 610, 17631} {
+		key := strings.Repeat("a", keySize)
+
+		// Ensure we fail consistently at different sides of the delta.
+		for valueSizeDelta := -10; valueSizeDelta <= 10; valueSizeDelta += 5 {
+			valueSize := int(defaultMaxEntrySize) - keySize - maxEntrySizeMultipleTxnOverhead + valueSizeDelta
+			value := strings.Repeat("b", valueSize)
+
+			entry := &physical.Entry{Key: key, Value: []byte(value)}
+			putErr := b.Put(t.Context(), entry)
+
+			txn, err := b.BeginTx(t.Context())
+			require.NoError(t, err)
+
+			txnErr := txn.Put(t.Context(), entry)
+
+			require.NoError(t, txn.Rollback(t.Context()))
+
+			if (putErr == nil) != (txnErr == nil) {
+				t.Fatalf("[key=%v / value=%v (delta=%v)] expected both b.Put(...)=%v and txn.Put(...)=%v to fail at the same time", keySize, valueSize, valueSizeDelta, putErr, txnErr)
+			}
+			if putErr != nil && txnErr != nil {
+				if strings.Contains(putErr.Error(), physical.ErrValueTooLarge) != strings.Contains(txnErr.Error(), physical.ErrValueTooLarge) {
+					t.Fatalf("[key=%v / value=%v (delta=%v)] expected both b.Put(...)=%v and txn.Put(...)=%v to both have same ErrValueTooLarge error", keySize, valueSize, valueSizeDelta, putErr, txnErr)
+				}
+			}
+		}
+	}
+}
+
+func TestRaft_LeaderConstant(t *testing.T) {
+	// To avoid a full dependency on the hashicorp/raft module,
+	// logical.ShouldForward(...) depends on the exact string of
+	// raft.ErrNotLeader. This test ensures that Put(...) and
+	// Delete(...) operations on the standby result in forwarding
+	// to the active.
+	require.True(t, logical.ShouldForward(raft.ErrNotLeader))
+}
+
+func TestRaft_LogTruncation(t *testing.T) {
+	const (
+		snapshotThreshold = 5
+		trailingLogs      = 5
+	)
+
+	conf := map[string]string{
+		"path":                   t.TempDir(),
+		"node_id":                "abc123",
+		"trailing_logs":          strconv.Itoa(trailingLogs),
+		"snapshot_threshold":     strconv.Itoa(snapshotThreshold),
+		"snapshot_interval":      "1s",
+		"performance_multiplier": "1",
+	}
+
+	backend, err := NewRaftBackend(conf, hclog.NewNullLogger())
+	require.NoError(t, err)
+	rb := backend.(*RaftBackend)
+	require.NoError(t, rb.Bootstrap([]Peer{{ID: rb.NodeID(), Address: rb.NodeID()}}))
+
+	// startCluster restarts the cluster and waits for it to be up.
+	startCluster := func() {
+		require.NoError(t, rb.TeardownCluster(nil))
+		require.NoError(t, rb.SetupCluster(t.Context(), SetupOpts{}))
+		require.Eventually(t, func() bool {
+			return rb.raft.State() == raft.Leader && rb.raft.AppliedIndex() >= rb.raft.LastIndex()
+		}, 3*time.Second, 100*time.Millisecond, "expected leader with all entries applied")
+	}
+
+	// writeEntries writes n entries and waits for them to be applied.
+	writeEntries := func(n int) {
+		for i := range n {
+			require.NoError(t, rb.Put(t.Context(), &physical.Entry{
+				Key:   fmt.Sprintf("key-%d", i),
+				Value: []byte("value"),
+			}))
+		}
+		require.Eventually(t, func() bool {
+			state, _ := rb.fsm.LatestState()
+			return state.Index >= rb.raft.LastIndex()
+		}, 5*time.Second, 100*time.Millisecond, "expected all entries to be applied")
+	}
+
+	// assertFirstIndex until the log's first index equals expected, or fails on timeout
+	assertFirstIndex := func(expected uint64) {
+		t.Helper()
+		var actual uint64
+		require.Eventually(t, func() bool {
+			var err error
+			actual, err = rb.logStore.FirstIndex()
+			return err == nil && actual == expected
+		}, 10*time.Second, 100*time.Millisecond, "expected firstIndex=%d, got %d", expected, actual)
+	}
+
+	// logEntryCount returns the number of log entries currently in the log.
+	logEntryCount := func() uint64 {
+		first, err := rb.logStore.FirstIndex()
+		require.NoError(t, err)
+		last, err := rb.logStore.LastIndex()
+		require.NoError(t, err)
+		return last - first + 1
+	}
+
+	startCluster()
+
+	// 1. Start with empty log. First index in raft.db should be 1.
+	assertFirstIndex(1)
+
+	// 2. Write entries but stay below the truncation trigger (snapshotThreshold + trailingLogs = 10).
+	writeEntries(5)
+	require.Less(t, logEntryCount(), uint64(snapshotThreshold+trailingLogs),
+		"entries below snapshot threshold, no snapshot expected")
+	assertFirstIndex(1)
+
+	// 3. Restart the cluster.
+	startCluster()
+
+	// 4. Write enough entries so the log exceeds the truncation trigger.
+	writeEntries(3)
+	require.Greater(t, logEntryCount(), uint64(snapshotThreshold+trailingLogs),
+		"entries exceed snapshot threshold, truncation should trigger")
+
+	// 5. Snapshot should delete log entries from raft.db, leaving only trailing logs.
+	last, err := rb.logStore.LastIndex()
+	require.NoError(t, err)
+	expectedFirst := last - trailingLogs + 1
+	assertFirstIndex(expectedFirst)
+
+	require.NoError(t, rb.TeardownCluster(nil))
+}
+
+func BenchmarkDB_Puts(b *testing.B) {
+	raft := GetRaft(b, true, false)
+	raft2 := GetRaft(b, true, false)
+
+	bench := func(b *testing.B, s physical.Backend, dataSize int) {
+		data, err := uuid.GenerateRandomBytes(dataSize)
+		if err != nil {
+			b.Fatal(err)
+		}
+
+		pe := &physical.Entry{
+			Value: data,
+		}
+		testName := b.Name()
+
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			pe.Key = fmt.Sprintf("%x", md5.Sum(fmt.Appendf(nil, "%s-%d", testName, i)))
+			err := s.Put(b.Context(), pe)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+
+	b.Run("256b", func(b *testing.B) { bench(b, raft, 256) })
+	b.Run("256kb", func(b *testing.B) { bench(b, raft2, 256*1024) })
+}
+
+func BenchmarkDB_Snapshot(b *testing.B) {
+	raft := GetRaft(b, true, false)
+
+	data, err := uuid.GenerateRandomBytes(256 * 1024)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	pe := &physical.Entry{
+		Value: data,
+	}
+	testName := b.Name()
+
+	for i := range 100 {
+		pe.Key = fmt.Sprintf("%x", md5.Sum(fmt.Appendf(nil, "%s-%d", testName, i)))
+		err = raft.Put(b.Context(), pe)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	bench := func(b *testing.B, s *FSM) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			pe.Key = fmt.Sprintf("%x", md5.Sum(fmt.Appendf(nil, "%s-%d", testName, i)))
+			s.writeTo(b.Context(), discardCloser{Writer: io.Discard}, discardCloser{Writer: io.Discard})
+		}
+	}
+
+	b.Run("256kb", func(b *testing.B) { bench(b, raft.fsm) })
+}
+
+type discardCloser struct {
+	io.Writer
+}
+
+func (d discardCloser) Close() error               { return nil }
+func (d discardCloser) CloseWithError(error) error { return nil }

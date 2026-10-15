@@ -6,10 +6,10 @@ import (
 	"net/mail"
 	"reflect"
 
-	"github.com/google/cel-go/cel"
-	"github.com/google/cel-go/common/types"
-	"github.com/google/cel-go/common/types/ref"
-	"github.com/google/cel-go/ext"
+	"cel.dev/cel-go/cel"
+	"cel.dev/cel-go/common/types"
+	"cel.dev/cel-go/common/types/ref"
+	"cel.dev/cel-go/ext"
 	"github.com/openbao/openbao/sdk/v2/logical"
 )
 
@@ -70,7 +70,7 @@ func IdentityDeclarations() []cel.EnvOption {
 // AddIdentity adds values for the identity system and is useful for secret
 // engines. IdentityDeclarations must be called to add these definitions to
 // to the environment first.
-func AddIdentity(view logical.SystemView, req *logical.Request, data map[string]interface{}) error {
+func AddIdentity(view logical.SystemView, req *logical.Request, data map[string]any) error {
 	data["client_token"] = req.ClientToken
 	data["entity_id"] = req.EntityID
 
